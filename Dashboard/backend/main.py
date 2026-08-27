@@ -4,15 +4,11 @@ Tier 1: task CRUD, AI prioritization (via the Gemini engine), AI scheduling,
 autonomous rescheduling, and calendar (.ics) export.
 """
 
-import secrets
-import time
-import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 import auth
@@ -39,6 +35,7 @@ import engine
 import habits as habits_mod
 import ics
 import memory
+import ratelimit
 import recovery
 import reminders as reminders_mod
 import risk
@@ -331,48 +328,6 @@ def upsert_current_user(user: dict = Depends(get_current_user)) -> dict:
     return db.upsert_user(user["id"], email=user["email"], name=user["name"], picture=user["picture"])
 
 
-# --- Google sign-in (full-page OAuth redirect) ---------------------------------
-@app.get("/api/auth/google/login")
-def google_login() -> RedirectResponse:
-    """Kick off the redirect flow. Used both for first sign-in and for the
-    "Connect Calendar" button — both need the same scope, so it's one flow."""
-    state = secrets.token_urlsafe(24)
-    resp = RedirectResponse(auth.build_login_url(state))
-    resp.set_cookie("oauth_state", state, httponly=True, samesite="lax", max_age=600)
-    return resp
-
-
-@app.get("/api/auth/google/callback")
-def google_callback(request: Request, code: str = "", state: str = "", error: str = "") -> RedirectResponse:
-    def fail(detail: str) -> RedirectResponse:
-        return RedirectResponse(f"{auth.FRONTEND_ORIGIN}/?auth_error={urllib.parse.quote(detail)}")
-
-    if error:
-        return fail(error)
-    if not code or not state or state != request.cookies.get("oauth_state"):
-        return fail("invalid_state")
-
-    try:
-        tokens = auth.exchange_code_for_tokens(code)
-        claims = auth.verify_google_id_token(tokens["id_token"])
-    except Exception as exc:  # noqa: BLE001
-        print(f"OAuth callback failed: {exc!r}")
-        return fail(str(exc))
-
-    db.upsert_user(claims["sub"], email=claims.get("email", ""), name=claims.get("name", ""), picture=claims.get("picture"))
-
-    refresh_token = tokens.get("refresh_token")
-    if refresh_token:
-        expires_at = time.time() + tokens.get("expires_in", 3600)
-        db.save_calendar_account(claims["sub"], refresh_token, tokens["access_token"], expires_at)
-        _import_calendar_events(claims["sub"], datetime.now())
-        _sync_schedule_to_calendar(claims["sub"], db.list_tasks(claims["sub"]))
-
-    resp = RedirectResponse(f"{auth.FRONTEND_ORIGIN}/#credential={tokens['id_token']}")
-    resp.delete_cookie("oauth_state")
-    return resp
-
-
 # --- Chat ---------------------------------------------------------------------
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, user: dict = Depends(get_current_user)) -> ChatResponse:
@@ -391,6 +346,7 @@ def chat(req: ChatRequest, user: dict = Depends(get_current_user)) -> ChatRespon
     relevant_facts = memory.retrieve_relevant_facts(req.message, db.get_memory_facts(user["id"]))
     memory_facts = [f["fact"] for f in relevant_facts]
     open_tasks = [_with_risk(t, now) for t in db.list_tasks(user["id"]) if t.get("status") not in ("COMPLETED", "ARCHIVED")]  # noqa: F821 (defined below, same module)
+    ratelimit.check(user["id"])
     try:
         result = engine.chat(req.message, [t.model_dump() for t in req.history], now=now, busy=busy,
                               memory_facts=memory_facts, open_tasks=open_tasks)
@@ -533,6 +489,8 @@ def search(q: str = "", user: dict = Depends(get_current_user)) -> dict:
     )
     matches = search_mod.substring_match(query, candidates)
     if not matches:
+        # Only the AI-ranked fallback costs Gemini quota — throttle just that.
+        ratelimit.check(user["id"])
         matches = engine.search_rank(query, candidates)
     return search_mod.group(matches)
 
@@ -551,6 +509,7 @@ def schedule(user: dict = Depends(get_current_user)) -> dict:
     _sync_schedule_to_calendar(user["id"], tasks)
     tasks = db.list_tasks(user["id"])
     scheduled = sum(1 for b in plan["blocks"])
+    ratelimit.check(user["id"])
     message = engine.plan_message(
         f"I just time-blocked {scheduled} task(s) into the user's day. "
         f"{len(plan['at_risk'])} may finish after their deadline."
@@ -604,6 +563,7 @@ def reschedule(user: dict = Depends(get_current_user)) -> dict:
     tasks = db.list_tasks(user["id"])
     _sync_schedule_to_calendar(user["id"], tasks)
     tasks = db.list_tasks(user["id"])
+    ratelimit.check(user["id"])
     message = engine.plan_message(
         f"Autonomous reschedule ran. {len(analysis['slipped'])} task(s) had slipped past "
         f"their planned time and {len(analysis['overdue'])} are overdue. I re-packed "
@@ -987,6 +947,7 @@ def generate_workflow_draft(body: WorkflowGenerateRequest, user: dict = Depends(
         raise HTTPException(status_code=400, detail="sop_text must not be empty.")
     if not engine.configured():
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured.")
+    ratelimit.check(user["id"])
     try:
         plan = engine.generate_workflow(body.sop_text)
     except Exception as err:  # noqa: BLE001
@@ -1109,6 +1070,7 @@ def summarize_memory_now(user: dict = Depends(get_current_user)) -> List[dict]:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured.")
     if not db.list_task_events(user["id"]):
         raise HTTPException(status_code=400, detail="Not enough activity yet to learn from.")
+    ratelimit.check(user["id"])
     try:
         return _summarize_memory_now(user["id"])
     except Exception as err:  # noqa: BLE001
@@ -1128,6 +1090,7 @@ def decompose_goal_draft(body: DecomposeRequest, user: dict = Depends(get_curren
         raise HTTPException(status_code=400, detail="goal must not be empty.")
     if not engine.configured():
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured.")
+    ratelimit.check(user["id"])
     try:
         plan = engine.decompose_goal(body.goal)
     except Exception as err:  # noqa: BLE001

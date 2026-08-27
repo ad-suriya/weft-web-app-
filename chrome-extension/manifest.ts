@@ -54,13 +54,13 @@ const manifest = {
   },
   content_scripts: [
     {
-      // Local dev origins plus the deployed Cloud Run frontend — without the
+      // Local dev origins plus the deployed Netlify frontend — without the
       // latter, logging in on the deployed dashboard never reaches the
       // extension since this bridge script wouldn't be injected there.
       matches: [
         'http://localhost:5173/*',
         'http://localhost:3000/*',
-        'https://task-weave-684807093732.asia-south1.run.app/*',
+        'https://task-weave-dashboard.netlify.app/*',
       ],
       js: ['content/dashboard-bridge.iife.js'],
     },

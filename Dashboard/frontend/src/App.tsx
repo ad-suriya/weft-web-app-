@@ -4,14 +4,16 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { onIdTokenChanged, signOut } from 'firebase/auth';
+import { auth as firebaseAuth } from './firebase';
 import { LoginPage } from './LoginPage';
 import {
   Loader2, Send, Copy, Check, Timer, CalendarPlus, Play, Pause, RotateCcw,
-  Plus, CalendarDays, RefreshCw, Trash2, Download, Clock, AlertTriangle, ArrowRight, Link2, Unlink,
+  Plus, CalendarDays, RefreshCw, Trash2, Download, Clock, AlertTriangle, ArrowRight,
   MessageCircle, X, HelpCircle, Crosshair, SkipForward,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { api } from './api';
+import { api, resetAuthGate } from './api';
 import {
   AgenticAction, ChatMessage, DecompositionPlan, Goal, Habit, MemoryFact, Mode, Status, SystemTrigger, Task,
   TaskRisk, Urgency, Workflow, WorkflowPlan,
@@ -127,94 +129,71 @@ export default function App() {
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
 
-  const [calendarConnected, setCalendarConnected] = useState(false);
-  const [calendarBusy, setCalendarBusy] = useState(false);
-
   const chatEndRef = useRef<HTMLDivElement>(null);
   const guardRef = useRef(false); // prevents overlapping auto-reschedules
+  const wasAuthedRef = useRef(false); // true once a Firebase user has been seen
 
   // --- effects ---------------------------------------------------------------
   useEffect(() => {
-    // The backend's OAuth callback (/api/auth/google/callback) redirects back
-    // here with the verified ID token in a URL fragment, e.g. #credential=...
-    // A fragment (not a query param) keeps it out of server logs and isn't
-    // sent on any subsequent request.
-    const hashMatch = window.location.hash.match(/credential=([^&]+)/);
-    if (hashMatch) {
-      const credential = decodeURIComponent(hashMatch[1]);
-      try {
-        const base64Url = credential.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-          atob(base64)
-            .split('')
-            .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-            .join('')
-        );
-        const userData = JSON.parse(jsonPayload);
-        const authData = {
-          isAuthenticated: true,
-          user: {
-            id: userData.sub,
-            email: userData.email,
-            name: userData.name,
-            picture: userData.picture,
-          },
-          accessToken: credential,
-          refreshToken: credential,
-          expiresAt: Date.now() + 3600 * 1000,
-        };
-        localStorage.setItem('auth', JSON.stringify(authData));
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-
-        fetch('/api/me', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${credential}` },
-        }).catch((err) => console.error('Failed to persist user to backend:', err));
-
-        // The extension's dashboard-bridge content script listens for this and
-        // relays isAuthenticated/user/accessToken/refreshToken to the
-        // background script — that's the only path that carries the real
-        // token to the extension (chrome.runtime isn't reachable from this
-        // page directly without externally_connectable + an extension id).
-        window.dispatchEvent(new CustomEvent('dashboardAuthChanged', { detail: authData }));
-
-        setIsAuthenticated(true);
-        setAuthUser(userData);
+    // Firebase Authentication is the single source of truth. onIdTokenChanged
+    // fires on sign-in, sign-out, and every ~1h token refresh, so the copy we
+    // mirror into localStorage (read by api.ts and relayed to the extension)
+    // stays fresh while this tab is open.
+    return onIdTokenChanged(firebaseAuth, async (user) => {
+      if (!user) {
+        localStorage.removeItem('auth');
+        // The extension's dashboard-bridge content script relays this to the
+        // background script so the extension clears its own auth state too.
+        window.dispatchEvent(new CustomEvent('dashboardAuthChanged', {
+          detail: { isAuthenticated: false, user: null, accessToken: '', refreshToken: '' },
+        }));
+        // If we were signed in a moment ago, this sign-out came from api.ts's
+        // 401 handler (backend rejected the token) — tell the user why.
+        if (wasAuthedRef.current) {
+          setAuthError('Signed in with Google, but the server rejected the session. Check the backend Firebase config.');
+        }
+        wasAuthedRef.current = false;
+        setIsAuthenticated(false);
+        setAuthUser(null);
         setAuthLoading(false);
         return;
-      } catch (err) {
-        console.error('Failed to parse credential from redirect:', err);
       }
-    }
 
-    const params = new URLSearchParams(window.location.search);
-    const err = params.get('auth_error');
-    if (err) {
-      setAuthError(err);
-      window.history.replaceState(null, '', window.location.pathname);
-    }
+      resetAuthGate();
+      wasAuthedRef.current = true;
+      setAuthError('');
+      const token = await user.getIdToken();
+      const profile = {
+        id: user.uid,
+        email: user.email || '',
+        name: user.displayName || user.email || 'You',
+        picture: user.photoURL || undefined,
+      };
+      const authData = {
+        isAuthenticated: true,
+        user: profile,
+        accessToken: token,
+        refreshToken: token,
+        expiresAt: Date.now() + 3600 * 1000,
+      };
+      localStorage.setItem('auth', JSON.stringify(authData));
 
-    // Check authentication from localStorage
-    const authStr = localStorage.getItem('auth');
-    if (authStr) {
-      try {
-        const auth = JSON.parse(authStr);
-        if (auth.isAuthenticated && auth.user) {
-          setIsAuthenticated(true);
-          setAuthUser(auth.user);
+      // Persist the user to the backend (identity comes from the verified
+      // token, not this body).
+      fetch('/api/me', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch((err) => console.error('Failed to persist user to backend:', err));
 
-          // Re-broadcast on every page load (not just at login time) so the
-          // extension's content script re-syncs after a reload/refresh —
-          // otherwise a stale content script from before an extension reload
-          // never hears about an auth state that already existed.
-          window.dispatchEvent(new CustomEvent('dashboardAuthChanged', { detail: auth }));
-        }
-      } catch (err) {
-        console.error('Failed to parse auth:', err);
-      }
-    }
-    setAuthLoading(false);
+      // The extension's dashboard-bridge content script listens for this and
+      // relays isAuthenticated/user/accessToken/refreshToken to the background
+      // script — that's the only path that carries the token to the extension.
+      window.dispatchEvent(new CustomEvent('dashboardAuthChanged', { detail: authData }));
+
+      setIsAuthenticated(true);
+      setAuthUser(profile);
+      setAuthLoading(false);
+    });
   }, []);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
@@ -247,7 +226,6 @@ export default function App() {
     api.listHabits().then(setHabits).catch(() => {});
     api.listWorkflows().then(setWorkflows).catch(() => {});
     api.getMemory().then(setMemoryFacts).catch(() => {});
-    api.calendarStatus().then((s) => setCalendarConnected(s.connected)).catch(() => {});
 
     if (!localStorage.getItem('tutorialSeen')) setShowTutorial(true);
 
@@ -288,15 +266,9 @@ export default function App() {
   }, [isAuthenticated]);
 
   const handleLogout = () => {
-    localStorage.removeItem('auth');
-    // Mirror the login path: the extension's dashboard-bridge content script
-    // listens for this on the dashboard tab and relays it to the background
-    // script, which clears the extension's own auth state too.
-    window.dispatchEvent(new CustomEvent('dashboardAuthChanged', {
-      detail: { isAuthenticated: false, user: null, accessToken: '', refreshToken: '' },
-    }));
-    setIsAuthenticated(false);
-    setAuthUser(null);
+    // onIdTokenChanged (above) handles the teardown: clears localStorage,
+    // relays the signed-out state to the extension, and resets React state.
+    signOut(firebaseAuth).catch((err) => console.error('Sign-out failed:', err));
   };
 
   const dismissTutorial = () => {
@@ -413,31 +385,6 @@ export default function App() {
     return () => { events.forEach((e) => window.removeEventListener(e, markActive)); clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Auto-sync with Google Calendar: pulls in events the user added directly
-  // on their calendar (as tasks) and pushes the current plan back out, on a
-  // timer — no "Sync" button press required once Calendar is connected.
-  const calendarSyncGuardRef = useRef(false);
-  useEffect(() => {
-    if (!calendarConnected) return;
-    const syncNow = async () => {
-      if (calendarSyncGuardRef.current) return;
-      calendarSyncGuardRef.current = true;
-      try {
-        const r = await api.calendarSync();
-        setTasks(r.tasks);
-        if (r.imported > 0) {
-          pushSystem(`Pulled ${r.imported} event${r.imported === 1 ? '' : 's'} from your Google Calendar.`);
-        }
-        refreshStatus();
-      } catch { /* offline / token revoked — try again next tick */ }
-      finally { calendarSyncGuardRef.current = false; }
-    };
-    const id = setInterval(syncNow, 90_000);
-    const t = setTimeout(syncNow, 2_000);
-    return () => { clearInterval(id); clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calendarConnected]);
 
   // --- helpers ---------------------------------------------------------------
   const pushSystem = (text: string) =>
@@ -646,24 +593,6 @@ export default function App() {
   const selectSearchGoal = () => setTab('goals');
   const selectSearchHabit = () => setTab('habits');
 
-  const connectCalendar = () => {
-    // Calendar access is granted via the same full-page OAuth redirect as
-    // sign-in (it's requested as part of that scope) — re-running it with
-    // `prompt=consent` always returns a fresh refresh token, so this also
-    // doubles as "reconnect" if access was revoked.
-    window.location.href = '/api/auth/google/login';
-  };
-
-  const disconnectCalendar = async () => {
-    setCalendarBusy(true);
-    try {
-      await api.disconnectCalendar();
-      setCalendarConnected(false);
-    } catch (err: any) {
-      setError(err.message || 'Could not disconnect Google Calendar.');
-    } finally { setCalendarBusy(false); }
-  };
-
   const planDay = async () => {
     setBusy('schedule');
     try {
@@ -770,7 +699,7 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <LoginPage authError={authError} />;
+    return <LoginPage authError={authError} onError={setAuthError} />;
   }
 
   return (
@@ -803,15 +732,6 @@ export default function App() {
               <SearchBar onSelectTask={selectSearchTask} onSelectGoal={selectSearchGoal} onSelectHabit={selectSearchHabit} />
             </div>
             <RemindersBell />
-            <button
-              onClick={calendarConnected ? disconnectCalendar : connectCalendar}
-              disabled={calendarBusy}
-              title={calendarConnected ? 'Disconnect Google Calendar' : 'Sync your schedule with Google Calendar'}
-              className="font-sans text-[10px] uppercase tracking-widest font-bold px-3 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors flex items-center gap-1 disabled:opacity-40"
-            >
-              {calendarBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : calendarConnected ? <Unlink className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
-              {calendarConnected ? 'Calendar Synced' : 'Sync Google Calendar'}
-            </button>
             <button
               data-tour="chat-toggle"
               onClick={() => setChatOpen((s) => !s)}

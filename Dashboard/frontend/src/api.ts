@@ -1,3 +1,5 @@
+import { signOut } from 'firebase/auth';
+import { auth as firebaseAuth } from './firebase';
 import {
   ChatResponse,
   ChatSession,
@@ -32,16 +34,21 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 
 let loggedOutFor401 = false;
 
+// Called by App when a fresh Firebase login lands, so a later 401 can act again.
+export function resetAuthGate(): void {
+  loggedOutFor401 = false;
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (res.status === 401) {
-    // Token missing/expired (Google ID tokens last ~1hr with no refresh in
-    // this flow) — drop the stale session and send the user back to login.
-    // Several requests can 401 around the same time (e.g. the tasks/goals/
-    // habits fetches that all fire together on login) — only act once.
+    // Backend rejected the token — sign out of Firebase and let App re-render
+    // the LoginPage (no page reload: the Firebase session persists, so a
+    // reload would just re-auth and 401 again in a loop). Several requests can
+    // 401 together on login — only act once.
     if (!loggedOutFor401) {
       loggedOutFor401 = true;
       localStorage.removeItem('auth');
-      window.location.reload();
+      signOut(firebaseAuth).catch(() => {});
     }
     throw new Error('Session expired. Please log in again.');
   }

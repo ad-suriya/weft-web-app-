@@ -1,0 +1,29 @@
+# Netlify hosting for the Task Weave dashboard frontend.
+#
+# In the Netlify UI, set the site's "Base directory" to `Dashboard/frontend`
+# so this file, the build command, and the publish dir all resolve here.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Proxy the API (and the Google OAuth login/callback under /api/auth/*) to the
+# FastAPI backend on Cloud Run. This replaces the old nginx `location /api/`
+# block and keeps the browser same-origin with the API, which the OAuth
+# redirect flow in backend/auth.py depends on (the oauth_state cookie is
+# scoped to this frontend origin).
+[[redirects]]
+  from = "/api/*"
+  to = "https://task-weave-backend-684807093732.asia-south1.run.app/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback: serve the built index.html for any route that isn't a static
+# asset. Must come after the /api rule.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

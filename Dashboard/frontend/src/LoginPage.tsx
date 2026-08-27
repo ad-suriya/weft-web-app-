@@ -1,17 +1,33 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from './firebase';
 
 interface LoginPageProps {
   authError?: string;
+  onError?: (message: string) => void;
 }
 
-// Sign-in is a full-page OAuth redirect handled by the backend
-// (/api/auth/google/login -> Google -> /api/auth/google/callback), not a
-// popup or FedCM/One Tap prompt. Google's popup/One Tap relay
-// (accounts.google.com/gsi/transform) depends on third-party storage access
-// that's unreliable across browsers/profiles; a redirect has no such
-// dependency. App.tsx picks up the result from the #credential= fragment
-// the backend redirects back with.
-export const LoginPage: React.FC<LoginPageProps> = ({ authError }) => {
+// Sign-in is a Firebase Authentication popup (Google provider). App.tsx's
+// onIdTokenChanged listener picks up the result, stores the Firebase ID token,
+// and relays it to the extension via the dashboardAuthChanged event.
+export const LoginPage: React.FC<LoginPageProps> = ({ authError, onError }) => {
+  const [busy, setBusy] = useState(false);
+
+  const signIn = async () => {
+    setBusy(true);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      const code = err?.code as string | undefined;
+      // A user closing the popup isn't an error worth showing.
+      if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {
+        onError?.(err?.message || 'Sign-in failed. Please try again.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F5F2ED] text-[#1A1A1A] flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-12">
@@ -32,9 +48,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ authError }) => {
           </div>
 
           <div className="space-y-4">
-            <a
-              href="/api/auth/google/login"
-              className="flex items-center justify-center gap-3 w-full border-2 border-[#1A1A1A] rounded-md py-3 font-bold hover:bg-[#1A1A1A] hover:text-white transition-colors"
+            <button
+              type="button"
+              onClick={signIn}
+              disabled={busy}
+              className="flex items-center justify-center gap-3 w-full border-2 border-[#1A1A1A] rounded-md py-3 font-bold hover:bg-[#1A1A1A] hover:text-white transition-colors disabled:opacity-50"
             >
               <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
                 <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
@@ -42,8 +60,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ authError }) => {
                 <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
                 <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l6.19 5.238C40.205 35.811 44 30.401 44 24c0-1.341-.138-2.65-.389-3.917z"/>
               </svg>
-              Sign in with Google
-            </a>
+              {busy ? 'Opening Google…' : 'Sign in with Google'}
+            </button>
 
             {authError && (
               <p className="text-center text-xs text-red-600 font-sans">{authError}</p>

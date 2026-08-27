@@ -24,14 +24,12 @@ PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJE
 LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
-# Vertex AI (Application Default Credentials) is preferred over the Gemini
-# Developer API (API key): the org's security policy disallows API keys
-# outright, and Vertex AI isn't capped by the Developer API's free-tier
-# limit of 20 requests/day per model — it bills normally through the GCP
-# project instead. Falls back to an API key only if no project is
-# configured (e.g. local dev without `gcloud auth application-default
-# login`). Note: the regional host (e.g. us-central1-aiplatform...) 404s
-# for publisher models here — only the global host + location work.
+# Default path is the Gemini Developer API (GEMINI_API_KEY) — the Vertex AI
+# billed project is no longer available. Vertex is still used automatically if
+# GOOGLE_CLOUD_PROJECT / GCP_PROJECT is set (e.g. a future paid project);
+# per-user throttling in ratelimit.py guards the Developer API's lower quota.
+# Note: on Vertex, the regional host (us-central1-aiplatform...) 404s for
+# publisher models — only the global host + location work.
 USE_VERTEX = bool(PROJECT_ID)
 
 BASE_SYSTEM = """\

@@ -16,6 +16,7 @@ tsconfig.tsbuildinfo
 **/.env.*
 **/.env
 client_secret_*.json
+Dashboard/backend/firebase-service-account.json
 
 # etc
 .DS_Store
@@ -49,3 +50,6 @@ Dashboard/frontend/*.log
 
 # Private settings
 .claude
+
+# Local Netlify folder
+.netlify
