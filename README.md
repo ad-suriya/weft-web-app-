@@ -2,7 +2,7 @@
 
 **Remember. Connect. Execute.** — an AI-powered focus and task companion.
 
-**Live dashboard:** https://task-weave-dashboard.netlify.app/
+**Live:** https://task-weave-dashboard.netlify.app/ &nbsp;·&nbsp; API: https://task-weave-backend.onrender.com
 
 Task Weave isn't a task manager. It's a decision-to-execution system for
 procrastination, deadline pressure, and distraction loops — built to shrink the gap
@@ -73,9 +73,13 @@ npm run dev
 
 The original stack ran on a paid Google Cloud project (Cloud Run for the
 frontend and backend, Vertex AI for Gemini, Firestore). After the GCP project's
-billing was disabled it was migrated to free tiers: **Netlify** for the
-dashboard, **Render** for the backend, **Firebase Authentication** for sign-in,
-and the **Gemini Developer API** for AI.
+billing was disabled it was migrated to free tiers and is live end to end:
+**Netlify** for the dashboard, **Render** for the backend, **Firebase
+Authentication** for sign-in, **Firestore** for data, and the **Gemini
+Developer API** for AI.
+
+- Dashboard: https://task-weave-dashboard.netlify.app/
+- Backend: https://task-weave-backend.onrender.com (`/api/health` for status)
 
 ### Features removed in the migration
 
@@ -113,6 +117,9 @@ and the **Gemini Developer API** for AI.
   `packages/storage/lib/impl/backend-client.ts`, then redeploy both.
 - **Firebase console** — enable the Google sign-in provider and add the Netlify
   domain under Authentication → Settings → Authorized domains.
+
+The Render free instance sleeps after ~15 min idle, so the first request after a
+lull takes ~30–60s while it wakes; subsequent requests are normal speed.
 
 ## Scripts
 
