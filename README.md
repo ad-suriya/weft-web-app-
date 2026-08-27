@@ -1,151 +1,85 @@
-# Vibe2Ship
+# Task Weave
 
-A comprehensive Chrome extension for managing tasks, habits, goals, and focus sessions with a companion dashboard.
+**Remember. Connect. Execute.** — an AI-powered focus and task companion.
 
-> **Built on** [chrome-extension-boilerplate-react-vite](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite) by Seo Jong Hak
+Task Weave isn't a task manager. It's a decision-to-execution system for
+procrastination, deadline pressure, and distraction loops — built to shrink the gap
+between "I should do this" and "I am doing this now."
 
-## Features
+**Core loop:** Capture → Plan → Execute → Protect → Recover → Repeat.
 
-- **Task Capture**: Quickly capture tasks directly from any webpage
-- **Focus Lock**: Block distracting websites during focus sessions
-- **Dashboard**: Full-featured web dashboard for managing your productivity
-- **Habit Tracking**: Track daily habits and routines
-- **Goal Management**: Set and monitor your goals
-- **Time Tracking**: Monitor focus sessions and productivity
-- **Sync Storage**: Synchronized storage across all extension pages
-- **Google Sign-In**: Authenticate via Google OAuth (`Dashboard/backend/auth.py`)
-- **Google Calendar Sync** *(planned)*: two-way sync between the AI-generated time-blocked schedule and the user's Google Calendar — avoid conflicts when scheduling focus blocks, and surface planned blocks/deadlines on the user's calendar
+- **Capture** — grab a task (and its page context) from anywhere you're browsing.
+- **Plan** — describe what's due in plain language; AI infers urgency and effort and
+  builds a time-blocked schedule.
+- **Execute** — a focus session shows one active task, a timer, and the next micro-step.
+- **Protect** — distracting sites are blocked while a session is running.
+- **Recover** — when a plan slips, remaining work is rescheduled into the next free slots.
 
-## Tech Stack
+## Surfaces
 
-- **Frontend**: React + TypeScript + Vite
-- **Backend**: Python FastAPI
-- **Extension**: Chrome Extension Manifest V3
-- **Styling**: Tailwind CSS
-- **Package Manager**: pnpm
+| Surface | Path | What it does |
+| --- | --- | --- |
+| Chrome extension | `chrome-extension/`, `pages/`, `packages/` | Instant capture, one-tap focus sessions, distraction + site-lock blocking |
+| Web dashboard | `Dashboard/` | Natural-language planning, AI schedules, deadline-risk scoring, task decomposition, weekly flexible streaks, recovery |
 
-## Project Structure
+## Tech stack
 
-```
-├── chrome-extension/       # Extension core and configuration
-├── pages/                  # Individual extension UI pages
-│   ├── popup/             # Extension popup
-│   ├── side-panel/        # Side panel UI
-│   ├── focus-lock/        # Focus blocking page
-│   ├── task-capture/      # Task capture UI
-│   └── ...
-├── packages/              # Shared packages
-│   ├── types/            # Shared TypeScript types
-│   ├── storage/          # Storage layer
-│   ├── messaging/        # Extension messaging
-│   └── ui/               # Shared UI components
-├── Dashboard/             # Web dashboard
-│   ├── frontend/         # React dashboard UI
-│   └── backend/          # Python FastAPI backend
-└── tests/                # Test files
-```
+- **Extension** — Chrome Manifest V3, React + TypeScript + Vite, Tailwind CSS, Turborepo + pnpm workspaces
+- **Dashboard frontend** — React + TypeScript + Vite
+- **Dashboard backend** — Python FastAPI, Google Gemini, Firebase
 
-## Getting Started
+## Getting started
 
-### Prerequisites
+**Prerequisites:** Node.js 18+, pnpm, Python 3.10+, and Chrome or Chromium.
 
-- Node.js 18+ and pnpm
-- Python 3.10+
-- Chrome or Chromium browser
+### Extension
 
-### Installation
-
-1. Clone the repository
-```bash
-git clone https://github.com/yourusername/vibe2ship.git
-cd vibe2ship
-```
-
-2. Install dependencies
 ```bash
 pnpm install
+pnpm dev            # watch build with HMR  (pnpm build for production)
 ```
 
-3. Set up environment variables
-```bash
-cp .example.env .env
-```
+Load it in Chrome: open `chrome://extensions/`, enable **Developer mode**, click
+**Load unpacked**, and select the `dist/` folder.
 
-4. Build the extension
-```bash
-pnpm build
-```
+To share a build without the Web Store: `pnpm zip` writes
+`dist-zip/extension-<timestamp>.zip`; the recipient unzips it and **Load unpacked**s
+that folder.
 
-### Development
+### Dashboard backend
 
-1. Start the development build with HMR:
-```bash
-pnpm dev
-```
-
-2. Load the extension in Chrome:
-   - Open `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `dist` folder
-
-3. For the dashboard backend:
 ```bash
 cd Dashboard/backend
 pip install -r requirements.txt
-python main.py
+python start.py            # http://127.0.0.1:8000
 ```
 
-4. For the dashboard frontend:
+Set `GEMINI_API_KEY` in `.env`. Google sign-in is handled in `auth.py`.
+
+### Dashboard frontend
+
 ```bash
 cd Dashboard/frontend
 npm install
 npm run dev
 ```
 
-## Sharing Without the Chrome Web Store
+## Scripts
 
-For reviewers/organizers who just want to try the extension without building from source:
+| Command | Description |
+| --- | --- |
+| `pnpm dev` | Watch build with HMR |
+| `pnpm build` | Production build (`pnpm build:firefox` for Firefox) |
+| `pnpm zip` | Build and package the extension into `dist-zip/` |
+| `pnpm lint` | ESLint across the workspace |
+| `pnpm type-check` | TypeScript checks across the workspace |
+| `pnpm e2e` | End-to-end tests |
 
-1. Build and zip it: `pnpm zip` (outputs to `dist-zip/extension-<timestamp>.zip`)
-2. Share that zip file (Drive, GitHub release, etc.)
-3. Ask them to:
-   - Unzip it
-   - Open `chrome://extensions/`
-   - Enable **Developer mode**
-   - Click **Load unpacked** and select the unzipped folder
+## Credits
 
-## Available Scripts
-
-- `pnpm dev` - Start development mode with HMR
-- `pnpm build` - Build for production
-- `pnpm lint` - Run ESLint
-- `pnpm test` - Run tests
-
-## Configuration
-
-### Chrome Extension
-
-- Manifest: `chrome-extension/manifest.ts`
-- Background script: `chrome-extension/src/background/`
-- Content scripts: `pages/content/`
-
-### Environment Variables
-
-See `.example.env` for available environment variables.
-
-For Google Calendar sync (`Dashboard/backend/calendar_sync.py`), set in `Dashboard/.env`:
-- `GOOGLE_OAUTH_CLIENT_ID` — defaults to the same client id used for sign-in
-- `GOOGLE_OAUTH_CLIENT_SECRET` — required; create a Web application OAuth client in Google Cloud Console with the `https://www.googleapis.com/auth/calendar.events` scope enabled
-
-## Acknowledgments
-
-This project is built on top of the excellent [chrome-extension-boilerplate-react-vite](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite) starter template by [Seo Jong Hak](https://github.com/Jonghakseo), which provides a solid foundation for Chrome Extension development with React, TypeScript, and Vite.
+Extension scaffolding based on
+[chrome-extension-boilerplate-react-vite](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite).
 
 ## License
 
-MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+MIT — see [LICENSE](LICENSE).
