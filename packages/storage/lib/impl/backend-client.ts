@@ -2,12 +2,12 @@ import { authStorage } from './auth-storage.js';
 
 // process.env.CEB_NODE_ENV is inlined at build time (see @extension/env) —
 // dev builds (CEB_DEV=true in the root .env) hit the local backend, anything
-// else falls back to the deployed Cloud Run service so an unpacked extension
+// else falls back to the deployed backend (Render) so an unpacked extension
 // works out of the box without a local backend running.
 export const API_BASE =
   process.env.CEB_NODE_ENV === 'development'
     ? 'http://localhost:8000/api'
-    : 'https://task-weave-backend-684807093732.asia-south1.run.app/api';
+    : 'https://task-weave-backend.onrender.com/api';
 
 // Same switch for the dashboard tab the popup opens for login/full editing —
 // must match the backend's FRONTEND_ORIGIN so the OAuth redirect lands back

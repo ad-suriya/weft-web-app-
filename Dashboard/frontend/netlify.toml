@@ -10,14 +10,12 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# Proxy the API (and the Google OAuth login/callback under /api/auth/*) to the
-# FastAPI backend on Cloud Run. This replaces the old nginx `location /api/`
-# block and keeps the browser same-origin with the API, which the OAuth
-# redirect flow in backend/auth.py depends on (the oauth_state cookie is
-# scoped to this frontend origin).
+# Proxy /api/* to the FastAPI backend (Render — see render.yaml). Server-side
+# proxy so the browser stays same-origin with the API. Update the host here if
+# Render assigns the service a different subdomain, then redeploy.
 [[redirects]]
   from = "/api/*"
-  to = "https://task-weave-backend-684807093732.asia-south1.run.app/api/:splat"
+  to = "https://task-weave-backend.onrender.com/api/:splat"
   status = 200
   force = true
 

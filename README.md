@@ -72,9 +72,10 @@ npm run dev
 ## Deployment & current state
 
 The original stack ran on a paid Google Cloud project (Cloud Run for the
-frontend, Vertex AI for Gemini, Firestore). Without the GCP premium plan it was
-migrated to free tiers: **Netlify** for the dashboard, **Firebase
-Authentication** for sign-in, and the **Gemini Developer API** for AI.
+frontend and backend, Vertex AI for Gemini, Firestore). After the GCP project's
+billing was disabled it was migrated to free tiers: **Netlify** for the
+dashboard, **Render** for the backend, **Firebase Authentication** for sign-in,
+and the **Gemini Developer API** for AI.
 
 ### Features removed in the migration
 
@@ -84,15 +85,16 @@ Authentication** for sign-in, and the **Gemini Developer API** for AI.
   no way to connect an account.
 - **Vertex AI** — Gemini now runs on the Developer API key instead of the
   billed Vertex project.
-- **Cloud Run frontend** — the dashboard moved to Netlify; the `Dockerfile` and
-  `nginx/` config under `Dashboard/frontend/` are kept but no longer used.
+- **Cloud Run** — both the dashboard (now Netlify) and the backend (now Render)
+  left Cloud Run. The frontend `Dockerfile` + `nginx/` config under
+  `Dashboard/frontend/` are kept but no longer used.
 
 ### Initial → current
 
 | Area | Initial | Current |
 | --- | --- | --- |
 | Dashboard hosting | Google Cloud Run (Docker + nginx) | Netlify — `Dashboard/frontend/netlify.toml` builds the SPA and proxies `/api/*` to the backend |
-| Backend hosting | Google Cloud Run | Google Cloud Run (unchanged) |
+| Backend hosting | Google Cloud Run | Render (`render.yaml`, Docker) |
 | Sign-in | Google OAuth 2.0 redirect flow; backend verified Google ID tokens | Firebase Authentication (Google provider) via `signInWithPopup`; backend verifies Firebase ID tokens with `firebase-admin` |
 | Database | Firestore on `project-56165b37-…` | Firestore on `the-last-minute-life-saver` (same project as Auth) |
 | AI provider | Vertex AI (Gemini) | Gemini Developer API via `GEMINI_API_KEY` |
@@ -102,9 +104,13 @@ Authentication** for sign-in, and the **Gemini Developer API** for AI.
 
 - **Frontend** — `cd Dashboard/frontend && netlify deploy --prod` (or connect the
   repo in Netlify with base directory `Dashboard/frontend`).
-- **Backend** — deploy `Dashboard/backend` to Cloud Run with `GEMINI_API_KEY`,
-  `FIREBASE_PROJECT_ID`, and `FIREBASE_CREDENTIALS` set; **do not** set
-  `GOOGLE_CLOUD_PROJECT`.
+- **Backend** — Render Blueprint at `render.yaml` (Docker, free plan). After the
+  first deploy, in the Render dashboard set `GEMINI_API_KEY` and add a Secret
+  File `firebase-service-account.json` (a key for the `the-last-minute-life-saver`
+  Firebase project). `GOOGLE_CLOUD_PROJECT` must stay unset. If Render assigns a
+  subdomain other than `task-weave-backend.onrender.com`, update the `/api/*`
+  target in `netlify.toml` and `API_BASE` in
+  `packages/storage/lib/impl/backend-client.ts`, then redeploy both.
 - **Firebase console** — enable the Google sign-in provider and add the Netlify
   domain under Authentication → Settings → Authorized domains.
 

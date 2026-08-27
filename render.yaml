@@ -1,0 +1,34 @@
+# Render Blueprint for the Task Weave FastAPI backend.
+# Frontend is on Netlify (Dashboard/frontend/netlify.toml); its /api/* proxy
+# points at this service's URL.
+#
+# One-time setup in the Render dashboard after the first deploy:
+#   1. Environment → add GEMINI_API_KEY (marked sync:false below, so Render
+#      prompts for it instead of reading it from here).
+#   2. Environment → Secret Files → add `firebase-service-account.json`
+#      (a service-account key for the `the-last-minute-life-saver` Firebase
+#      project). Render mounts it at /etc/secrets/firebase-service-account.json,
+#      which FIREBASE_CREDENTIALS below points to.
+
+services:
+  - type: web
+    name: task-weave-backend
+    runtime: docker
+    dockerfilePath: ./Dashboard/backend/Dockerfile
+    dockerContext: ./Dashboard/backend
+    plan: free
+    region: singapore
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: USE_FIRESTORE
+        value: "1"
+      - key: FIREBASE_PROJECT_ID
+        value: the-last-minute-life-saver
+      - key: FIREBASE_CREDENTIALS
+        value: /etc/secrets/firebase-service-account.json
+      - key: FRONTEND_ORIGIN
+        value: https://task-weave-dashboard.netlify.app
+      # Do NOT set GOOGLE_CLOUD_PROJECT — it makes engine.py switch to Vertex AI.
