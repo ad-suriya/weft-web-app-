@@ -182,6 +182,14 @@ def set_schedule(task_id: int, user_id: str, start: Optional[str], end: Optional
             {"scheduled_start": start, "scheduled_end": end, "updated_at": now_iso()}, merge=True)
 
 
+def clear_calendar_event(task_id: int, user_id: str) -> None:
+    """Drop the stored Google Calendar event id (update_task ignores None, so
+    it can set a value but never unset one)."""
+    if _get("tasks", task_id, user_id):
+        _col("tasks").document(str(task_id)).set(
+            {"calendar_event_id": None, "updated_at": now_iso()}, merge=True)
+
+
 def delete_task(task_id: int, user_id: str) -> bool:
     return _delete("tasks", task_id, user_id)
 

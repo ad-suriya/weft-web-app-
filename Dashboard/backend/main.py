@@ -247,17 +247,45 @@ def _calendar_access_token(user_id: str) -> Optional[str]:
         account, on_refresh=lambda token, expires_at: db.update_calendar_access_token(user_id, token, expires_at))
 
 
+def _apply_task_to_calendar(user_id: str, task: dict, token: str, tz: str) -> None:
+    """Make the Google Calendar event for one task match its current state.
+
+    Active + scheduled  -> create/patch the event (name, notes, time).
+    Completed/archived or unscheduled -> remove any event we'd created, so
+    editing a task on the site (renaming, moving, finishing, clearing its
+    time) is reflected on the calendar, not just the initial time-block.
+    """
+    event_id = task.get("calendar_event_id")
+    inactive = task.get("status") in ("COMPLETED", "ARCHIVED")
+    if inactive or not task.get("scheduled_start"):
+        if event_id:
+            calendar_sync.delete_event(token, event_id)
+            db.clear_calendar_event(task["id"], user_id)
+        return
+    new_id = calendar_sync.push_event(token, task, tz)
+    if new_id and new_id != event_id:
+        db.update_task(task["id"], user_id, calendar_event_id=new_id)
+
+
 def _sync_schedule_to_calendar(user_id: str, tasks: list[dict]) -> None:
-    """Best-effort push of every scheduled, non-completed task to Google Calendar."""
+    """Best-effort: reconcile every task's calendar event with its state."""
     token = _calendar_access_token(user_id)
     if not token:
         return
+    tz = calendar_sync.get_calendar_timezone(token)
     for task in tasks:
-        if task.get("status") in ("COMPLETED", "ARCHIVED") or not task.get("scheduled_start"):
-            continue
-        event_id = calendar_sync.push_event(token, task)
-        if event_id and event_id != task.get("calendar_event_id"):
-            db.update_task(task["id"], user_id, calendar_event_id=event_id)
+        _apply_task_to_calendar(user_id, task, token, tz)
+
+
+def _resync_task_calendar(user_id: str, task: Optional[dict]) -> None:
+    """Single-task version for the task-edit endpoint — one event lookup, no
+    full sweep."""
+    if not task:
+        return
+    token = _calendar_access_token(user_id)
+    if not token:
+        return
+    _apply_task_to_calendar(user_id, task, token, calendar_sync.get_calendar_timezone(token))
 
 
 def _calendar_busy_window(user_id: str, now: datetime) -> list[tuple[datetime, datetime]]:
@@ -505,6 +533,9 @@ def patch_task(task_id: int, body: TaskPatch, user: dict = Depends(get_current_u
             if (wf.get("trigger_match") or "").lower() in task_name:
                 run_workflow_now(wf["id"], user)  # noqa: F821 (defined below, same module)
 
+    # Push the edit (new time, rename, or completion) out to Google Calendar.
+    _resync_task_calendar(user["id"], updated)
+
     return _with_risk(updated) if updated else updated  # type: ignore[return-value]
 
 
@@ -643,6 +674,7 @@ def _recover_and_persist(user_id: str, task_ids: List[int], now: datetime) -> Op
     for m in moved:
         db.set_schedule(m["task_id"], user_id, m["new_start"].isoformat(), m["new_end"].isoformat())
     regen_reminders(user_id)
+    _sync_schedule_to_calendar(user_id, db.list_tasks(user_id))
 
     lead = moved[0]
     summary = recovery.describe(lead["chunks"], now)

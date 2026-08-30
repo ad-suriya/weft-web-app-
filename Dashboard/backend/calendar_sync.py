@@ -65,6 +65,24 @@ def get_access_token(account: dict, on_refresh=None) -> Optional[str]:
     return refreshed["access_token"]
 
 
+def get_calendar_timezone(access_token: str) -> str:
+    """The user's primary-calendar time zone (IANA name, e.g. 'Asia/Kolkata').
+
+    Task schedule times are stored as naive local wall-clock strings with no
+    offset; Google's events.insert rejects those unless a `timeZone` is sent
+    alongside. Read from the events list response (top-level `timeZone`) —
+    the `calendar.events` scope we hold can't read /calendars/primary or user
+    settings. Falls back to UTC if the lookup fails.
+    """
+    try:
+        resp = requests.get(EVENTS_URI, params={"maxResults": 1},
+                            headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        resp.raise_for_status()
+        return resp.json().get("timeZone") or "UTC"
+    except requests.RequestException:
+        return "UTC"
+
+
 def _event_window(task: dict) -> Optional[tuple[str, str]]:
     start, end = task.get("scheduled_start"), task.get("scheduled_end")
     if start and end:
@@ -72,8 +90,12 @@ def _event_window(task: dict) -> Optional[tuple[str, str]]:
     return None
 
 
-def push_event(access_token: str, task: dict) -> Optional[str]:
+def push_event(access_token: str, task: dict, time_zone: str = "UTC") -> Optional[str]:
     """Create or update the calendar event for a scheduled task.
+
+    `time_zone` is the IANA zone the task's naive schedule strings are in
+    (see get_calendar_timezone) — required by Google when the dateTime
+    carries no UTC offset.
 
     Returns the Google event id (to store back on the task) or None if the
     task has no schedule yet / the call failed.
@@ -85,8 +107,8 @@ def push_event(access_token: str, task: dict) -> Optional[str]:
     body = {
         "summary": task["task_name"],
         "description": task.get("next_micro_step") or "",
-        "start": {"dateTime": start},
-        "end": {"dateTime": end},
+        "start": {"dateTime": start, "timeZone": time_zone},
+        "end": {"dateTime": end, "timeZone": time_zone},
         "extendedProperties": {"private": {"source": SOURCE_TAG}},
     }
     headers = {"Authorization": f"Bearer {access_token}"}
