@@ -7,7 +7,7 @@ import { authStorage } from './auth-storage.js';
 export const API_BASE =
   process.env.CEB_NODE_ENV === 'development'
     ? 'http://localhost:8000/api'
-    : 'https://task-weave-backend-684807093732.asia-south1.run.app/api';
+    : 'https://task-weave-backend-57923630274.asia-south1.run.app/api';
 
 // Same switch for the dashboard tab the popup opens for login/full editing —
 // must match the backend's FRONTEND_ORIGIN so the OAuth redirect lands back
@@ -15,7 +15,7 @@ export const API_BASE =
 export const FRONTEND_URL =
   process.env.CEB_NODE_ENV === 'development'
     ? 'http://localhost:5173'
-    : 'https://task-weave-684807093732.asia-south1.run.app';
+    : 'https://task-weave-57923630274.asia-south1.run.app';
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const auth = await authStorage.get();

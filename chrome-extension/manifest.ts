@@ -60,7 +60,7 @@ const manifest = {
       matches: [
         'http://localhost:5173/*',
         'http://localhost:3000/*',
-        'https://task-weave-684807093732.asia-south1.run.app/*',
+        'https://task-weave-57923630274.asia-south1.run.app/*',
       ],
       js: ['content/dashboard-bridge.iife.js'],
     },
