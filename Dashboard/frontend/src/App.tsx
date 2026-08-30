@@ -8,7 +8,7 @@ import { LoginPage } from './LoginPage';
 import {
   Loader2, Send, Copy, Check, Timer, CalendarPlus, Play, Pause, RotateCcw,
   Plus, CalendarDays, RefreshCw, Trash2, Download, Clock, AlertTriangle, ArrowRight, Link2, Unlink,
-  MessageCircle, X, HelpCircle, Crosshair, SkipForward,
+  MessageCircle, X, HelpCircle, Crosshair, SkipForward, Mic,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './api';
@@ -507,6 +507,43 @@ export default function App() {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); }
+  };
+
+  // --- Voice dictation (Web Speech API) --------------------------------------
+  // Browser-native speech-to-text; no server round-trip. Chrome/Edge/Safari
+  // expose it (some only under the webkit- prefix); Firefox doesn't, so the
+  // button hides itself when the API is absent.
+  const SpeechRecognitionImpl =
+    typeof window !== 'undefined'
+      ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+      : undefined;
+  const voiceSupported = !!SpeechRecognitionImpl;
+  const recognitionRef = useRef<any>(null);
+  const dictationBaseRef = useRef('');
+  const [listening, setListening] = useState(false);
+
+  useEffect(() => () => { try { recognitionRef.current?.abort(); } catch { /* noop */ } }, []);
+
+  const toggleVoice = () => {
+    if (!voiceSupported) return;
+    if (listening) { recognitionRef.current?.stop(); return; }
+
+    const rec = new SpeechRecognitionImpl();
+    rec.lang = 'en-US';
+    rec.interimResults = true;
+    rec.continuous = true;
+    dictationBaseRef.current = input ? input.replace(/\s*$/, '') + ' ' : '';
+
+    rec.onresult = (e: any) => {
+      let transcript = '';
+      for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+      setInput(dictationBaseRef.current + transcript);
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+
+    recognitionRef.current = rec;
+    try { rec.start(); setListening(true); } catch { setListening(false); }
   };
 
   const togglePomo = () => {
@@ -1242,8 +1279,18 @@ export default function App() {
         <div className="border-t border-[#1A1A1A] p-3 flex gap-2 items-end">
           <textarea
             className="flex-grow h-16 p-3 border border-[#1A1A1A]/30 bg-white font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#1A1A1A] resize-none"
-            placeholder="Tell me what's due and where you're stuck…"
+            placeholder={listening ? 'Listening…' : "Tell me what's due and where you're stuck…"}
             value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={loading || chatLoading} />
+          {voiceSupported && (
+            <button onClick={toggleVoice} disabled={loading || chatLoading}
+              className={`h-16 px-4 flex items-center justify-center border border-[#1A1A1A] transition-colors disabled:opacity-40 ${
+                listening ? 'bg-[#D14D2A] text-white animate-pulse' : 'bg-white text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white'
+              }`}
+              aria-label={listening ? 'Stop dictation' : 'Dictate with voice'}
+              aria-pressed={listening} title={listening ? 'Stop dictation' : 'Dictate with voice'}>
+              <Mic className="w-4 h-4" />
+            </button>
+          )}
           <button onClick={() => send(input)} disabled={loading || chatLoading || !input.trim()}
             className="h-16 px-5 bg-[#1A1A1A] hover:bg-[#333] disabled:bg-gray-400 text-white flex items-center justify-center shadow-[3px_3px_0px_0px_#D14D2A] transition-colors" aria-label="Send">
             <Send className="w-4 h-4" />
