@@ -8,9 +8,13 @@
 **/dist
 **/build
 **/dist-zip
+**/.netlify
 chrome-extension/manifest.js
 chrome-extension/pre-build.tsconfig.tsbuildinfo
 tsconfig.tsbuildinfo
+
+# generated reports
+/PROJECT_REPORT.pdf
 
 # env
 **/.env.*
