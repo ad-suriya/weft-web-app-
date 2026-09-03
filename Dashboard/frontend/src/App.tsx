@@ -8,7 +8,7 @@ import { LoginPage } from './LoginPage';
 import {
   Loader2, Send, Copy, Check, Timer, CalendarPlus, Play, Pause, RotateCcw,
   Plus, CalendarDays, RefreshCw, Trash2, Download, Clock, AlertTriangle, ArrowRight, Link2, Unlink,
-  MessageCircle, X, HelpCircle, Crosshair, SkipForward, Mic,
+  MessageCircle, X, HelpCircle, Crosshair, SkipForward, Mic, Shield,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './api';
@@ -29,6 +29,8 @@ import WorkflowsPanel from './components/WorkflowsPanel';
 import DecomposePanel from './components/DecomposePanel';
 import MemoryPanel from './components/MemoryPanel';
 import Sidebar, { Section } from './components/Sidebar';
+import { ConsentModal } from './ConsentModal';
+import { DataPrivacyModal } from './DataPrivacyModal';
 
 const MODE_META: Record<Mode, { label: string; color: string; blurb: string }> = {
   PLANNING_MODE: { label: 'Planning', color: '#2A6B5E', blurb: 'Deadline is days out — be strategic.' },
@@ -89,6 +91,12 @@ export default function App() {
   const [authUser, setAuthUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
+  // First-use data-use notice. undefined = not checked yet, null = checked and
+  // not accepted (show the modal), string = ISO timestamp of acceptance.
+  const [consentAcceptedAt, setConsentAcceptedAt] = useState<string | null | undefined>(
+    () => localStorage.getItem('weft_consent') || undefined,
+  );
+  const [showDataPrivacy, setShowDataPrivacy] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatSessionId, setChatSessionId] = useState<string>(loadOrCreateChatSessionId);
@@ -249,6 +257,16 @@ export default function App() {
     api.getMemory().then(setMemoryFacts).catch(() => {});
     api.calendarStatus().then((s) => setCalendarConnected(s.connected)).catch(() => {});
 
+    // First-use consent: the profile is the source of truth.
+    api.getProfile()
+      .then((p) => {
+        const c = p.consent_accepted_at ?? null;
+        setConsentAcceptedAt(c);
+        if (c) localStorage.setItem('weft_consent', c);
+        else localStorage.removeItem('weft_consent');
+      })
+      .catch(() => setConsentAcceptedAt((v) => (v ? v : null)));
+
     if (!localStorage.getItem('tutorialSeen')) setShowTutorial(true);
 
     // Ask for notification permission up front instead of leaving it buried
@@ -286,6 +304,12 @@ export default function App() {
     const id = setInterval(sync, 5_000);
     return () => clearInterval(id);
   }, [isAuthenticated]);
+
+  const acceptConsent = async () => {
+    const r = await api.acceptConsent();
+    localStorage.setItem('weft_consent', r.consent_accepted_at);
+    setConsentAcceptedAt(r.consent_accepted_at);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('auth');
@@ -812,6 +836,14 @@ export default function App() {
 
   return (
     <div className="h-screen bg-[#F5F2ED] text-[#1A1A1A] font-serif flex overflow-hidden">
+      {consentAcceptedAt === null && <ConsentModal onAccept={acceptConsent} />}
+      {showDataPrivacy && (
+        <DataPrivacyModal
+          consentAcceptedAt={typeof consentAcceptedAt === 'string' ? consentAcceptedAt : undefined}
+          onClose={() => setShowDataPrivacy(false)}
+          onDeleted={() => { setShowDataPrivacy(false); window.location.reload(); }}
+        />
+      )}
       {showTutorial && (
         <GuidedTour
           onDismiss={dismissTutorial}
@@ -872,6 +904,13 @@ export default function App() {
                 {authUser.name}
               </div>
             )}
+            <button
+              onClick={() => setShowDataPrivacy(true)}
+              title="Privacy & data controls"
+              className="font-sans text-[10px] uppercase tracking-widest font-bold px-3 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors flex items-center gap-1"
+            >
+              <Shield className="w-3 h-3" /> Privacy
+            </button>
             <button
               onClick={handleLogout}
               className="font-sans text-[10px] uppercase tracking-widest font-bold px-3 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors"

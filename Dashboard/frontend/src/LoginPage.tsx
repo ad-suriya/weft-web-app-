@@ -85,7 +85,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ authError }) => {
 
         {/* Footer */}
         <p className="text-center text-xs opacity-50">
-          By signing in, you agree to our Terms of Service and Privacy Policy
+          By signing in, you agree to our Terms of Service and{' '}
+          <a href="/privacy" className="underline hover:text-[#2A6B5E]">Privacy Policy</a>
         </p>
       </div>
     </div>

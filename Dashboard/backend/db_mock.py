@@ -516,6 +516,7 @@ def upsert_user(user_id: str, email: str = "", name: str = "", picture: Optional
     existing = _data["users"].get(user_id)
     ts = now_iso()
     user = {
+        **(existing or {}),
         "id": user_id,
         "email": email,
         "name": name,
@@ -525,6 +526,44 @@ def upsert_user(user_id: str, email: str = "", name: str = "", picture: Optional
     }
     _data["users"][user_id] = user
     return user
+
+
+def set_user_consent(user_id: str, version: str) -> dict:
+    """Record acceptance of the data-use notice on the user's profile."""
+    ts = now_iso()
+    user = {**_data["users"].get(user_id, {"id": user_id, "created_at": ts}),
+            "consent_accepted_at": ts, "consent_version": version, "updated_at": ts}
+    _data["users"][user_id] = user
+    return user
+
+
+# Mirrors db.py: per-user collections wiped by delete_user_data (not `users`).
+_USER_COLLECTIONS = (
+    "tasks", "workflows", "sessions", "goals", "habits", "habit_logs",
+    "reminders", "projects", "task_events", "chats",
+)
+
+
+def export_user_data(user_id: str) -> dict:
+    out = {"exported_at": now_iso(), "user": _data["users"].get(user_id)}
+    for name in _USER_COLLECTIONS:
+        out[name] = [d for d in _data.get(name, {}).values() if d.get("user_id") == user_id]
+    out["memory"] = get_memory_facts(user_id)
+    return out
+
+
+def delete_user_data(user_id: str) -> dict:
+    counts = {}
+    for name in _USER_COLLECTIONS:
+        bucket = _data.get(name, {})
+        ids = [k for k, v in bucket.items() if v.get("user_id") == user_id]
+        for k in ids:
+            del bucket[k]
+        counts[name] = len(ids)
+    counts["memory"] = len(_data.setdefault("memory", {}).pop(user_id, []))
+    if _data["calendar_accounts"].pop(user_id, None) is not None:
+        counts["calendar_accounts"] = 1
+    return counts
 
 
 # --- Long-term behavioral memory ---------------------------------------------

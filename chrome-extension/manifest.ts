@@ -30,8 +30,17 @@ const manifest = {
   },
   version: packageJson.version,
   description: '__MSG_extensionDescription__',
+  // Needed so the focus-session site block can run on any page the user
+  // navigates to during a session, and so the dashboard-bridge can relay a
+  // login from the deployed dashboard origin. No page content is read or sent.
   host_permissions: ['<all_urls>'],
-  permissions: ['storage', 'scripting', 'tabs', 'notifications', 'contextMenus'],
+  // Kept minimal (Chrome Web Store disclosure):
+  //   storage      — the user's tasks, focus sessions, blocklist, auth + consent, all local
+  //   tabs         — read the ACTIVE tab's title + URL for explicit "Save Reference" / task capture
+  //   contextMenus — the "Add to WEFT" right-click entry
+  // Deliberately NOT requested: `notifications` and `scripting` (unused), and
+  // no notification-listener / Do-Not-Disturb access anywhere.
+  permissions: ['storage', 'tabs', 'contextMenus'],
   background: {
     service_worker: 'background.js',
     type: 'module',

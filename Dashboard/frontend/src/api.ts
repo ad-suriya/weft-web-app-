@@ -179,4 +179,17 @@ export const api = {
     fetch('/api/tasks/decompose', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ goal }) }).then(handle<DecompositionPlan>),
   commitDecomposition: (goal: string, subtasks: SubtaskDraft[]) =>
     fetch('/api/tasks/decompose/commit', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ goal, subtasks }) }).then(handle<Task[]>),
+
+  // Privacy — first-use notice/consent + data export & delete
+  getProfile: () =>
+    fetch('/api/me', { headers: authHeaders() }).then(
+      handle<{ id: string; name?: string; email?: string; consent_accepted_at?: string; consent_version?: string }>,
+    ),
+  acceptConsent: () =>
+    fetch('/api/me/consent', { method: 'POST', headers: authHeaders() }).then(
+      handle<{ consent_accepted_at: string; consent_version: string }>,
+    ),
+  exportMyData: () => fetch('/api/me/data/export', { headers: authHeaders() }).then(handle<Record<string, unknown>>),
+  deleteMyData: () =>
+    fetch('/api/me/data', { method: 'DELETE', headers: authHeaders() }).then(handle<{ deleted: Record<string, number> }>),
 };

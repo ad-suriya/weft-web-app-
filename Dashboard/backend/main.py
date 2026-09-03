@@ -13,9 +13,10 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import auth
+import privacy
 from auth import get_current_user
 
 import os
@@ -93,6 +94,11 @@ class ChatMessageCreate(BaseModel):
     content: str
 
 
+# Data-minimization: `url` / `selected_text` / `next_micro_step` are the only
+# task fields that can carry anything page-derived. They are the WEFT analogue
+# of a "Reference" row — so they pass through privacy.enforce_metadata_only /
+# clean_url, which reject raw page HTML, full page text, and over-long blobs.
+# (Any future dedicated `references` / `work_state` model MUST do the same.)
 class TaskCreate(BaseModel):
     task_name: str
     urgency: engine.Urgency = engine.Urgency.MEDIUM
@@ -105,6 +111,21 @@ class TaskCreate(BaseModel):
     selected_text: Optional[str] = None
     tags: List[str] = []
     dependencies: List[int] = []
+
+    @field_validator("selected_text")
+    @classmethod
+    def _v_snippet(cls, v):
+        return privacy.enforce_metadata_only(v, field="selected_text", max_len=privacy.MAX_SNIPPET_LEN)
+
+    @field_validator("next_micro_step")
+    @classmethod
+    def _v_note(cls, v):
+        return privacy.enforce_metadata_only(v, field="next_micro_step", max_len=privacy.MAX_NOTE_LEN)
+
+    @field_validator("url")
+    @classmethod
+    def _v_url(cls, v):
+        return privacy.clean_url(v)
 
 
 class TaskPatch(BaseModel):
@@ -120,6 +141,21 @@ class TaskPatch(BaseModel):
     selected_text: Optional[str] = None
     tags: Optional[List[str]] = None
     dependencies: Optional[List[int]] = None
+
+    @field_validator("selected_text")
+    @classmethod
+    def _v_snippet(cls, v):
+        return privacy.enforce_metadata_only(v, field="selected_text", max_len=privacy.MAX_SNIPPET_LEN)
+
+    @field_validator("next_micro_step")
+    @classmethod
+    def _v_note(cls, v):
+        return privacy.enforce_metadata_only(v, field="next_micro_step", max_len=privacy.MAX_NOTE_LEN)
+
+    @field_validator("url")
+    @classmethod
+    def _v_url(cls, v):
+        return privacy.clean_url(v)
 
 
 class RecoverRequest(BaseModel):
@@ -357,6 +393,34 @@ def upsert_current_user(user: dict = Depends(get_current_user)) -> dict:
     the verified token only — never from the request body — so one account
     can't claim to be another."""
     return db.upsert_user(user["id"], email=user["email"], name=user["name"], picture=user["picture"])
+
+
+# --- Privacy: notice/consent + data export/delete ----------------------------
+# Current text of the data-use notice the user must accept on first use. Bump
+# this string whenever the notice materially changes so returning users are
+# re-prompted (frontend compares it against the stored consent_version).
+CONSENT_VERSION = "2026-09-03"
+
+
+@app.post("/api/me/consent")
+def accept_consent(user: dict = Depends(get_current_user)) -> dict:
+    """Record that the user has seen and accepted the data-use notice. Stored
+    on the profile so it is shown only once (per notice version)."""
+    return db.set_user_consent(user["id"], CONSENT_VERSION)
+
+
+@app.get("/api/me/data/export")
+def export_my_data(user: dict = Depends(get_current_user)) -> dict:
+    """Download everything WEFT stores for this user as JSON."""
+    return db.export_user_data(user["id"])
+
+
+@app.delete("/api/me/data")
+def delete_my_data(user: dict = Depends(get_current_user)) -> dict:
+    """Delete the user's Workflows, Steps, WorkState and References — i.e. all
+    of their content. The account identity and consent record are kept so the
+    session stays valid; everything else is removed."""
+    return {"deleted": db.delete_user_data(user["id"])}
 
 
 # --- Google sign-in (full-page OAuth redirect) ---------------------------------

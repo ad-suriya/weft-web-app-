@@ -1,3 +1,13 @@
+// "Focus" here = an app-level work session plus in-browser site blocking
+// (blocking-storage). It is entirely local/app state and touches NO system
+// focus mode.
+//
+// PLACEHOLDER: a real "Study Focus" that controls the OS Do-Not-Disturb or
+// silences notifications (esp. on Android) is deliberately not built yet. It
+// would need a declared permission (e.g. ACCESS_NOTIFICATION_POLICY /
+// notification-listener), a Play Store justification, and a privacy-policy
+// update — see PRIVACY_IMPLEMENTATION.md. Until then any "focus"/"study"
+// toggle in the UI must stay local-only.
 import { request, mapApiSession } from './backend-client.js';
 import type { ApiSession } from './backend-client.js';
 import type { FocusSession, FocusSessionCreateInput } from '@extension/types';

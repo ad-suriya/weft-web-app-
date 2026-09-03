@@ -6,3 +6,4 @@ export * from './project-storage.js';
 export * from './backend-client.js';
 export * from './blocking-storage.js';
 export * from './blocked-sites-storage.js';
+export * from './consent-storage.js';

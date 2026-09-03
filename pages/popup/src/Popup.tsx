@@ -1,14 +1,16 @@
 import '@src/Popup.css';
 import { useEffect, useState } from 'react';
 import { useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
-import { exampleThemeStorage, authStorage, focusSessionStorage, tasksStorage, blockingStorage, blockedSitesStorage, FRONTEND_URL, API_BASE } from '@extension/storage';
+import { exampleThemeStorage, authStorage, focusSessionStorage, tasksStorage, blockingStorage, blockedSitesStorage, consentStorage, CONSENT_VERSION, FRONTEND_URL, API_BASE } from '@extension/storage';
 import { cn, LoadingSpinner, TimeTracker } from '@extension/ui';
 import { Login } from './Login';
+import { ConsentNotice } from './ConsentNotice';
 import type { FocusSession, Task } from '@extension/types';
 
 function Popup() {
   const { isLight } = useStorage(exampleThemeStorage);
   const { isAuthenticated } = useStorage(authStorage);
+  const consent = useStorage(consentStorage);
   const blockedSites = useStorage(blockedSitesStorage);
   const blockingState = useStorage(blockingStorage);
   const [session, setSession] = useState<FocusSession | null>(null);
@@ -229,6 +231,11 @@ function Popup() {
 
   if (!isAuthenticated) {
     return <Login isLight={isLight} onLoginSuccess={() => {}} />;
+  }
+
+  // First-use data-use notice — shown once, before the popup is usable.
+  if (consent.acceptedVersion !== CONSENT_VERSION) {
+    return <ConsentNotice isLight={isLight} onAccept={() => void consentStorage.accept()} />;
   }
 
   return (

@@ -75,9 +75,15 @@ export default function Sidebar({ active, onSelect, badges = {}, horizontal = fa
         ))}
       </div>
 
-      <div className="p-4 border-t border-[#1A1A1A]/10">
+      <div className="p-4 border-t border-[#1A1A1A]/10 space-y-1">
         <p className="font-sans text-[9px] uppercase font-black tracking-widest opacity-40">Zero-friction starts.</p>
         <p className="font-sans text-[9px] uppercase font-black tracking-widest opacity-40">Real deadlines met.</p>
+        <a
+          href="/privacy"
+          className="block font-sans text-[9px] uppercase font-black tracking-widest opacity-40 hover:opacity-80 hover:text-[#2A6B5E] transition-opacity"
+        >
+          Privacy Policy
+        </a>
       </div>
     </nav>
   );

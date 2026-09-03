@@ -510,6 +510,7 @@ def upsert_user(user_id: str, email: str = "", name: str = "", picture: Optional
     existing = get_user(user_id)
     ts = now_iso()
     return _save("users", {
+        **(existing or {}),
         "id": user_id,
         "email": email,
         "name": name,
@@ -517,6 +518,55 @@ def upsert_user(user_id: str, email: str = "", name: str = "", picture: Optional
         "created_at": existing["created_at"] if existing else ts,
         "updated_at": ts,
     })
+
+
+def set_user_consent(user_id: str, version: str) -> dict:
+    """Record acceptance of the data-use notice on the user's profile."""
+    existing = get_user(user_id) or {"id": user_id, "created_at": now_iso()}
+    existing["consent_accepted_at"] = now_iso()
+    existing["consent_version"] = version
+    existing["updated_at"] = now_iso()
+    return _save("users", existing)
+
+
+# Every per-user collection that holds a `user_id`-tagged doc. `users` is
+# deliberately excluded from delete (identity + consent survive); `memory` is a
+# per-user subcollection handled separately.
+_USER_COLLECTIONS = (
+    "tasks", "workflows", "sessions", "goals", "habits", "habit_logs",
+    "reminders", "projects", "task_events", "chats",
+)
+
+
+def export_user_data(user_id: str) -> dict:
+    """Everything WEFT stores for this user, ready to serialize as JSON."""
+    out = {"exported_at": now_iso(), "user": get_user(user_id)}
+    for name in _USER_COLLECTIONS:
+        out[name] = _all(name, user_id)
+    out["memory"] = get_memory_facts(user_id)
+    return out
+
+
+def delete_user_data(user_id: str) -> dict:
+    """Delete all of the user's content. Keeps the `users` identity/consent doc
+    so the session stays valid."""
+    counts: dict[str, int] = {}
+    for name in _USER_COLLECTIONS:
+        n = 0
+        for doc in _col(name).stream():
+            if (doc.to_dict() or {}).get("user_id") == user_id:
+                doc.reference.delete()
+                n += 1
+        counts[name] = n
+    mem = 0
+    for doc in _memory_col(user_id).stream():
+        doc.reference.delete()
+        mem += 1
+    counts["memory"] = mem
+    if _get("calendar_accounts", user_id):
+        _delete("calendar_accounts", user_id)
+        counts["calendar_accounts"] = 1
+    return counts
 
 
 # --- Long-term behavioral memory --------------------------------------------
