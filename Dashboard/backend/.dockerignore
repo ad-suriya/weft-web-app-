@@ -4,5 +4,4 @@ __pycache__
 *.pyc
 .env
 .env.*
-client_secret_*.json
 *.db
