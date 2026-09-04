@@ -21,6 +21,11 @@ tsconfig.tsbuildinfo
 **/.env
 !**/.env.example
 
+# service-account / admin keys — never commit
+**/*service-account*.json
+**/serviceAccount*.json
+**/*-firebase-adminsdk-*.json
+
 # etc
 .DS_Store
 .idea
