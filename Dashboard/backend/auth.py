@@ -22,7 +22,7 @@ from fastapi import Header, HTTPException
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 GOOGLE_CLIENT_ID = os.environ.get(
     "GOOGLE_OAUTH_CLIENT_ID",

@@ -19,7 +19,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore as admin_firestore
 from google.cloud import firestore as gcf
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 _client = None
 

@@ -67,8 +67,11 @@ pnpm install
 ```
 
 3. Set up environment variables
+
+   The root `.env` (extension build flags, no secrets) is created automatically
+   by `pnpm install`. For the dashboard backend, copy the template and fill it in:
 ```bash
-cp .example.env .env
+cp Dashboard/backend/.env.example Dashboard/backend/.env
 ```
 
 4. Build the extension
@@ -132,9 +135,9 @@ For reviewers/organizers who just want to try the extension without building fro
 
 ### Environment Variables
 
-See `.example.env` for available environment variables.
+See `Dashboard/backend/.env.example` for the backend variables and what each one does.
 
-For Google Calendar sync (`Dashboard/backend/calendar_sync.py`), set in `Dashboard/.env`:
+For Google Calendar sync (`Dashboard/backend/calendar_sync.py`), set in `Dashboard/backend/.env`:
 - `GOOGLE_OAUTH_CLIENT_ID` — defaults to the same client id used for sign-in
 - `GOOGLE_OAUTH_CLIENT_SECRET` — required; create a Web application OAuth client in Google Cloud Console with the `https://www.googleapis.com/auth/calendar.events` scope enabled
 

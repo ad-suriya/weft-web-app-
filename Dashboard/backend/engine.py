@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from google import genai
 from google.genai import types
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
