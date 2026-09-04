@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.join(__dirname, '..');
 
 const pages = [
   'popup',
@@ -15,10 +16,10 @@ const pages = [
   'devtools-panel',
 ];
 
-const rootDist = path.join(__dirname, 'dist');
+const rootDist = path.join(rootDir, 'dist');
 
 for (const page of pages) {
-  const src = path.join(__dirname, 'pages', page, 'dist');
+  const src = path.join(rootDir, 'pages', page, 'dist');
   const dest = path.join(rootDist, page);
 
   if (fs.existsSync(src)) {
@@ -28,7 +29,7 @@ for (const page of pages) {
 }
 
 // Copy content scripts
-const contentSrc = path.join(__dirname, 'dist', 'content');
+const contentSrc = path.join(rootDir, 'dist', 'content');
 if (fs.existsSync(contentSrc)) {
   console.log('Content scripts already in dist');
 }

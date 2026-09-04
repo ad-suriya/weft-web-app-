@@ -41,15 +41,15 @@ tsconfig.tsbuildinfo
 **/*.pyo
 **/*.pyd
 **/.Python
-Dashboard/backend/env/
+dashboard/backend/env/
 **/venv/
 **/.venv
 
 # Logs
 *.log
 *.log.*
-Dashboard/backend/*.log
-Dashboard/frontend/*.log
+dashboard/backend/*.log
+dashboard/frontend/*.log
 
 # IDE
 .vscode/

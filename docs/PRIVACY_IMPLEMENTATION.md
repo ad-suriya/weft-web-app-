@@ -5,7 +5,7 @@ Chrome extension). There is **no Android app in this repo yet**, so its parts
 are recorded here as placeholders.
 
 ## 1. Privacy policy page — done
-- `Dashboard/frontend/src/PrivacyPolicy.tsx`, served at `/privacy`
+- `dashboard/frontend/src/PrivacyPolicy.tsx`, served at `/privacy`
   (`main.tsx` path check; nginx already falls back to `index.html`).
 - Footer link: `components/Sidebar.tsx`. Also linked from `LoginPage.tsx`.
 - Extension: `packages/i18n/locales/{en,ko}/messages.json`
@@ -22,7 +22,7 @@ are recorded here as placeholders.
   `POST /api/me/consent` call before the first screen.
 
 ## 3. Data-minimization guardrails (backend) — done
-- `Dashboard/backend/privacy.py`: `enforce_metadata_only()` rejects raw page
+- `dashboard/backend/privacy.py`: `enforce_metadata_only()` rejects raw page
   HTML / full page text / over-long blobs; `clean_url()` validates URLs.
 - Wired into `TaskCreate` / `TaskPatch` validators for `selected_text`,
   `next_micro_step`, `url` — the only task fields that carry page-derived

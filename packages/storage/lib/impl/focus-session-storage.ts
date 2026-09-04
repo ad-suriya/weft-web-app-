@@ -6,7 +6,7 @@
 // silences notifications (esp. on Android) is deliberately not built yet. It
 // would need a declared permission (e.g. ACCESS_NOTIFICATION_POLICY /
 // notification-listener), a Play Store justification, and a privacy-policy
-// update — see PRIVACY_IMPLEMENTATION.md. Until then any "focus"/"study"
+// update — see docs/PRIVACY_IMPLEMENTATION.md. Until then any "focus"/"study"
 // toggle in the UI must stay local-only.
 import { request, mapApiSession } from './backend-client.js';
 import type { ApiSession } from './backend-client.js';

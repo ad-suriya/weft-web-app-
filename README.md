@@ -13,7 +13,7 @@ A comprehensive Chrome extension for managing tasks, habits, goals, and focus se
 - **Goal Management**: Set and monitor your goals
 - **Time Tracking**: Monitor focus sessions and productivity
 - **Sync Storage**: Synchronized storage across all extension pages
-- **Google Sign-In**: Authenticate via Google OAuth (`Dashboard/backend/auth.py`)
+- **Google Sign-In**: Authenticate via Google OAuth (`dashboard/backend/auth.py`)
 - **Google Calendar Sync** *(planned)*: two-way sync between the AI-generated time-blocked schedule and the user's Google Calendar — avoid conflicts when scheduling focus blocks, and surface planned blocks/deadlines on the user's calendar
 
 ## Tech Stack
@@ -39,10 +39,11 @@ A comprehensive Chrome extension for managing tasks, habits, goals, and focus se
 │   ├── storage/          # Storage layer
 │   ├── messaging/        # Extension messaging
 │   └── ui/               # Shared UI components
-├── Dashboard/             # Web dashboard
+├── dashboard/             # Web dashboard
 │   ├── frontend/         # React dashboard UI
 │   └── backend/          # Python FastAPI backend
-└── tests/                # Test files
+├── scripts/              # Build / env helper scripts
+└── docs/                 # Project documentation
 ```
 
 ## Getting Started
@@ -71,7 +72,7 @@ pnpm install
    The root `.env` (extension build flags, no secrets) is created automatically
    by `pnpm install`. For the dashboard backend, copy the template and fill it in:
 ```bash
-cp Dashboard/backend/.env.example Dashboard/backend/.env
+cp dashboard/backend/.env.example dashboard/backend/.env
 ```
 
 4. Build the extension
@@ -94,14 +95,14 @@ pnpm dev
 
 3. For the dashboard backend:
 ```bash
-cd Dashboard/backend
+cd dashboard/backend
 pip install -r requirements.txt
 python main.py
 ```
 
 4. For the dashboard frontend:
 ```bash
-cd Dashboard/frontend
+cd dashboard/frontend
 npm install
 npm run dev
 ```
@@ -123,7 +124,8 @@ For reviewers/organizers who just want to try the extension without building fro
 - `pnpm dev` - Start development mode with HMR
 - `pnpm build` - Build for production
 - `pnpm lint` - Run ESLint
-- `pnpm test` - Run tests
+- `pnpm type-check` - Run TypeScript type checking
+- `pnpm e2e` - Build, zip, and run end-to-end tests
 
 ## Configuration
 
@@ -135,9 +137,9 @@ For reviewers/organizers who just want to try the extension without building fro
 
 ### Environment Variables
 
-See `Dashboard/backend/.env.example` for the backend variables and what each one does.
+See `dashboard/backend/.env.example` for the backend variables and what each one does.
 
-For Google Calendar sync (`Dashboard/backend/calendar_sync.py`), set in `Dashboard/backend/.env`:
+For Google Calendar sync (`dashboard/backend/calendar_sync.py`), set in `dashboard/backend/.env`:
 - `GOOGLE_OAUTH_CLIENT_ID` — defaults to the same client id used for sign-in
 - `GOOGLE_OAUTH_CLIENT_SECRET` — required; create a Web application OAuth client in Google Cloud Console with the `https://www.googleapis.com/auth/calendar.events` scope enabled
 
