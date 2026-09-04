@@ -16,6 +16,7 @@ import os
 import urllib.parse
 from pathlib import Path
 
+import cachecontrol
 import requests
 from dotenv import load_dotenv
 from fastapi import Header, HTTPException
@@ -50,7 +51,18 @@ GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 LOGIN_SCOPE = "openid email profile https://www.googleapis.com/auth/calendar.events"
 
-_request = google_requests.Request()
+# verify_oauth2_token fetches Google's public certs fresh on *every single
+# call* — no caching of its own. That's an extra network round-trip on every
+# authenticated request, and under real concurrency (the dashboard fires many
+# endpoints at once) enough of those round-trips share this one session that
+# a transient failure on any of them turns into a false "invalid token" 401 —
+# which the frontend reacts to by clearing the session and reloading the page
+# (see api.ts's handle()), so this silently produced a reload loop for a
+# validly-signed-in user. Wrapping the session in an HTTP cache is Google's
+# own documented fix: the certs endpoint sets a long max-age, so this drops
+# to one real fetch per cache window instead of one per request.
+_cached_session = cachecontrol.CacheControl(requests.Session())
+_request = google_requests.Request(session=_cached_session)
 
 
 def verify_google_id_token(token: str) -> dict:

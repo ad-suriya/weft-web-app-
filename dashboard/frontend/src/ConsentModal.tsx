@@ -21,11 +21,11 @@ export const ConsentModal: React.FC<Props> = ({ onAccept }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#1A1A1A]/70 flex items-center justify-center p-4 font-sans">
-      <div className="w-full max-w-lg bg-white border-2 border-[#1A1A1A] shadow-[8px_8px_0px_0px_#1A1A1A]">
-        <div className="border-b-2 border-[#1A1A1A] px-6 py-4">
-          <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">Before you start</p>
-          <h2 className="font-serif text-2xl font-black italic mt-1">What WEFT stores</h2>
+    <div className="fixed inset-0 z-[100] bg-[#2C312A]/70 flex items-center justify-center p-4 font-sans">
+      <div className="w-full max-w-lg bg-white border-2 border-[#23271F]/14 shadow-[0_20px_50px_-16px_rgba(35,39,31,0.28)]">
+        <div className="border-b-2 border-[#23271F]/14 px-6 py-4">
+          <p className="text-[10px] uppercase tracking-wider font-bold opacity-60">Before you start</p>
+          <h2 className="font-serif text-2xl font-semibold italic mt-1">What WEFT stores</h2>
         </div>
 
         <div className="px-6 py-5 space-y-4 text-sm leading-relaxed">
@@ -37,7 +37,7 @@ export const ConsentModal: React.FC<Props> = ({ onAccept }) => {
               'the title and URL of pages you explicitly save as a reference',
             ].map(x => (
               <li key={x} className="flex gap-2.5">
-                <span className="text-[#2A6B5E] font-bold">✓</span>
+                <span className="text-[#2F7A64] font-bold">✓</span>
                 <span>{x}</span>
               </li>
             ))}
@@ -48,18 +48,18 @@ export const ConsentModal: React.FC<Props> = ({ onAccept }) => {
           </p>
           <p className="text-xs opacity-70">
             Read the full{' '}
-            <a href="/privacy" target="_blank" rel="noreferrer" className="underline font-bold text-[#2A6B5E]">
+            <a href="/privacy" target="_blank" rel="noreferrer" className="underline font-bold text-[#2F7A64]">
               Privacy Policy
             </a>
             . You can export or delete all your data any time from Privacy &amp; Data.
           </p>
         </div>
 
-        <div className="border-t-2 border-[#1A1A1A] px-6 py-4 flex justify-end">
+        <div className="border-t-2 border-[#23271F]/14 px-6 py-4 flex justify-end">
           <button
             onClick={accept}
             disabled={busy}
-            className="font-sans text-[11px] uppercase tracking-widest font-bold px-5 py-2.5 bg-[#2A6B5E] text-white hover:bg-[#1E4F45] transition-colors flex items-center gap-2 disabled:opacity-50"
+            className="font-sans text-[11px] uppercase tracking-wider font-bold px-5 py-2.5 bg-[#2F7A64] text-white hover:bg-[#245E4E] transition-colors flex items-center gap-2 disabled:opacity-50"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Accept &amp; continue

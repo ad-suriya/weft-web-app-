@@ -7,7 +7,7 @@ interface Props {
   onCommit: (plan: DecompositionPlan) => Promise<Task[]>;
 }
 
-const PRIORITY_COLOR: Record<Urgency, string> = { HIGH: '#D14D2A', MEDIUM: '#1A1A1A', LOW: '#6B7280' };
+const PRIORITY_COLOR: Record<Urgency, string> = { HIGH: '#C2632F', MEDIUM: '#23271F', LOW: '#6B7280' };
 const PX_PER_HOUR = 28;
 
 // A block on the timeline: a stable key (the AI's draft id pre-commit, or
@@ -56,7 +56,7 @@ function Timeline({ blocks }: { blocks: TimelineBlock[] }) {
   return (
     <div className="overflow-x-auto">
       <div style={{ width: Math.max(480, (totalHours + 1) * PX_PER_HOUR) }}>
-        <div className="relative h-5 border-b border-[#1A1A1A]/20 mb-2">
+        <div className="relative h-5 border-b border-[#23271F]/14 mb-2">
           {Array.from({ length: Math.ceil(totalHours) + 1 }, (_, h) => (
             <span key={h} className="absolute top-0 font-sans text-[9px] opacity-40"
               style={{ left: h * PX_PER_HOUR }}>{h}h</span>
@@ -69,7 +69,7 @@ function Timeline({ blocks }: { blocks: TimelineBlock[] }) {
             return (
               <div key={b.key} className="relative h-9">
                 <div
-                  className="absolute h-9 text-white px-2.5 flex items-center text-[11px] font-sans font-bold truncate shadow-[2px_2px_0px_0px_rgba(26,26,26,0.25)]"
+                  className="absolute h-9 text-white px-2.5 flex items-center text-[11px] font-sans font-bold truncate shadow-[0_3px_12px_rgba(35,39,31,0.10)]"
                   style={{
                     left: t.start * PX_PER_HOUR,
                     width: Math.max(b.hours * PX_PER_HOUR, 60),
@@ -141,18 +141,18 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 border-b border-[#1A1A1A] pb-2 mb-4">
+      <div className="flex items-center gap-3 border-b border-[#23271F]/14 pb-2 mb-4">
         <GitBranch className="w-4 h-4" />
-        <span className="font-sans text-[10px] uppercase tracking-widest font-black">Task Breakdown</span>
-        <div className="h-[1px] flex-grow bg-[#1A1A1A] opacity-20" />
+        <span className="font-sans text-[10px] uppercase tracking-wider font-semibold">Task Breakdown</span>
+        <div className="h-[1px] flex-grow bg-[#2C312A] opacity-20" />
       </div>
 
-      <div className="bg-white border border-[#1A1A1A] p-4 mb-4 space-y-3 shadow-[3px_3px_0px_0px_rgba(26,26,26,0.1)]">
-        <label className="font-sans text-[10px] uppercase font-bold tracking-widest block opacity-70">
+      <div className="bg-white border border-[#23271F]/14 p-4 mb-4 space-y-3 shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
+        <label className="font-sans text-[10px] uppercase font-bold tracking-wider block opacity-70">
           Describe a big, vague goal — AI breaks it into concrete subtasks with dependencies
         </label>
         <textarea
-          className="w-full p-2 border border-[#1A1A1A]/30 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#1A1A1A] resize-none"
+          className="w-full p-2 border border-[#23271F]/18 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#2F7A64] resize-none"
           rows={2}
           placeholder="e.g. Build hackathon app in 3 days"
           value={goal}
@@ -161,19 +161,19 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
         />
         <div className="flex justify-end">
           <button onClick={generate} disabled={generating || !goal.trim()}
-            className="font-sans text-[11px] font-bold uppercase tracking-widest px-4 py-2 bg-[#1A1A1A] text-white hover:bg-[#333] disabled:opacity-40 flex items-center gap-2">
+            className="font-sans text-[11px] font-bold uppercase tracking-wider px-4 py-2 bg-[#2C312A] text-white hover:bg-[#3A3F37] disabled:opacity-40 flex items-center gap-2">
             {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
             Break It Down
           </button>
         </div>
-        {error && <p className="font-sans text-[11px] font-bold uppercase text-[#D14D2A]">{error}</p>}
+        {error && <p className="font-sans text-[11px] font-bold uppercase text-[#C2632F]">{error}</p>}
       </div>
 
       {draft && !created && (
-        <div className="bg-[#F5F2ED] border border-[#1A1A1A] p-4 mb-4 space-y-4 shadow-[3px_3px_0px_0px_rgba(209,77,42,1)]">
+        <div className="bg-[#F1F3EF] border border-[#23271F]/14 p-4 mb-4 space-y-4 shadow-[0_8px_22px_-8px_rgba(194,99,47,0.40)]">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold tracking-tight truncate">{draft.goal}</h3>
-            <span className="font-sans text-[9px] font-bold px-2 py-1 bg-[#1A1A1A] text-white uppercase tracking-widest shrink-0">
+            <span className="font-sans text-[9px] font-bold px-2 py-1 bg-[#2C312A] text-white uppercase tracking-wider shrink-0">
               {draft.subtasks.length} subtasks
             </span>
           </div>
@@ -182,7 +182,7 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
 
           <div className="space-y-1.5">
             {draft.subtasks.map((s) => (
-              <div key={s.id} className="flex items-center gap-2 bg-white border border-[#1A1A1A]/15 px-3 py-2">
+              <div key={s.id} className="flex items-center gap-2 bg-white border border-[#23271F]/12 px-3 py-2">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: PRIORITY_COLOR[s.priority] }} />
                 <span className="font-sans text-sm flex-grow truncate">{s.title}</span>
                 <span className="font-sans text-[9px] font-bold uppercase opacity-50 shrink-0">{s.priority} · {s.estimated_hours}h</span>
@@ -191,10 +191,10 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
           </div>
 
           <div className="flex justify-end gap-2">
-            <button onClick={() => setDraft(null)} className="font-sans text-[10px] uppercase font-bold tracking-widest px-3 py-2 flex items-center gap-1">
+            <button onClick={() => setDraft(null)} className="font-sans text-[10px] uppercase font-bold tracking-wider px-3 py-2 flex items-center gap-1">
               <X className="w-3 h-3" /> Discard
             </button>
-            <button onClick={commit} disabled={committing} className="font-sans text-[10px] uppercase font-bold tracking-widest px-3 py-2 bg-[#2A6B5E] text-white disabled:opacity-40 flex items-center gap-1">
+            <button onClick={commit} disabled={committing} className="font-sans text-[10px] uppercase font-bold tracking-wider px-3 py-2 bg-[#2F7A64] text-white disabled:opacity-40 flex items-center gap-1">
               {committing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Create Tasks
             </button>
           </div>
@@ -202,8 +202,8 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
       )}
 
       {created && (
-        <div className="bg-white border border-[#2A6B5E] p-4 space-y-3 shadow-[3px_3px_0px_0px_rgba(42,107,94,1)]">
-          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-[#2A6B5E]">
+        <div className="bg-white border border-[#2F7A64] p-4 space-y-3 shadow-[0_8px_22px_-8px_rgba(47,122,100,0.35)]">
+          <p className="font-sans text-[11px] font-bold uppercase tracking-wider text-[#2F7A64]">
             Created {created.length} task{created.length === 1 ? '' : 's'} — execution graph below
           </p>
           <Timeline blocks={createdBlocks} />
@@ -211,7 +211,7 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
       )}
 
       {!draft && !created && (
-        <div className="font-sans text-sm opacity-50 italic py-10 text-center border border-dashed border-[#1A1A1A]/30">
+        <div className="font-sans text-sm opacity-50 italic py-10 text-center border border-dashed border-[#23271F]/18">
           Describe a goal above and AI will turn it into a concrete, dependency-ordered timeline.
         </div>
       )}

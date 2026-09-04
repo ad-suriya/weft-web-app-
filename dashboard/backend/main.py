@@ -217,6 +217,7 @@ class SessionCreate(BaseModel):
     description: str = ""
     project_id: Optional[int] = None
     duration_minutes: int = 0
+    task_id: Optional[int] = None
 
 
 class SessionPatch(BaseModel):
@@ -227,6 +228,20 @@ class SessionPatch(BaseModel):
     is_paused: Optional[bool] = None
     breaks_taken: Optional[int] = None
     total_break_minutes: Optional[int] = None
+    task_id: Optional[int] = None
+
+
+class FocusPrefsPatch(BaseModel):
+    study_focus: Optional[bool] = None
+    hold_notifications: Optional[bool] = None
+    allow_list: Optional[List[str]] = None
+
+
+class ReferenceCreate(BaseModel):
+    title: str
+    url: str = ""
+    task_id: Optional[int] = None
+    snippet: str = ""
 
 
 class ProjectCreate(BaseModel):
@@ -384,7 +399,17 @@ def health() -> dict:
 @app.get("/api/me")
 def get_current_user_profile(user: dict = Depends(get_current_user)) -> dict:
     """Get the verified, currently-authenticated user's profile."""
-    return db.get_user(user["id"]) or user
+    profile = db.get_user(user["id"]) or user
+    return {**profile, "focus_prefs": db.get_focus_prefs(user["id"])}
+
+
+@app.patch("/api/me/focus")
+def patch_focus_prefs(body: FocusPrefsPatch, user: dict = Depends(get_current_user)) -> dict:
+    """Focus Bridge preferences: the Study Focus toggle, whether to hold
+    browser notifications while it's on and a session is running, and the
+    always-allowed list shown in the Today/Devices panels. Local to this
+    account — there's no phone client yet to actually push these to."""
+    return db.set_focus_prefs(user["id"], **body.model_dump(exclude_none=True))
 
 
 @app.post("/api/me")
@@ -951,6 +976,25 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _close_session(session: dict, user_id: str, end_time: str) -> dict:
+    """The one place a session ever transitions to closed — used whether that
+    happens by an explicit Stop (patch_session), an abandoned/duplicate
+    session getting swept (add_session, get_sessions), or a stale one timing
+    out. Always true-ups the mirrored Calendar event, and — the part that
+    actually matters for the UI — credits the elapsed focus time to the
+    linked task's completed_minutes exactly once, however the close happened."""
+    if session.get("end_time"):
+        return session  # already closed — never double-credit
+    updated = db.update_session(session["id"], user_id, end_time=end_time) or session
+    updated = _push_session_event(user_id, updated, end_time)
+    if session.get("task_id"):
+        start = _as_utc(datetime.fromisoformat(session["start_time"]))
+        end = _as_utc(datetime.fromisoformat(end_time))
+        worked_minutes = (end - start).total_seconds() / 60 - (updated.get("total_break_minutes") or 0)
+        db.credit_task_time(session["task_id"], user_id, worked_minutes)
+    return updated
+
+
 @app.get("/api/sessions")
 def get_sessions(user: dict = Depends(get_current_user)) -> List[dict]:
     """List sessions, lazily closing out abandoned ones so today/week totals
@@ -968,18 +1012,14 @@ def get_sessions(user: dict = Depends(get_current_user)) -> List[dict]:
     open_sessions = sorted((s for s in sessions if not s.get("end_time")), key=lambda s: s["id"])
 
     for s in open_sessions[:-1]:
-        closed = db.update_session(s["id"], user["id"], end_time=now_iso)
-        if closed:
-            s.update(closed)
+        s.update(_close_session(s, user["id"], now_iso))
 
     if open_sessions:
         newest = open_sessions[-1]
         start = _as_utc(datetime.fromisoformat(newest["start_time"]))
         elapsed_minutes = (now - start).total_seconds() / 60
         if elapsed_minutes > STALE_SESSION_MINUTES:
-            closed = db.update_session(newest["id"], user["id"], end_time=now_iso)
-            if closed:
-                newest.update(closed)
+            newest.update(_close_session(newest, user["id"], now_iso))
 
     return sessions
 
@@ -1015,8 +1055,9 @@ def add_session(body: SessionCreate, user: dict = Depends(get_current_user)) -> 
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     for s in db.list_sessions(user["id"]):
         if not s.get("end_time"):
-            db.update_session(s["id"], user["id"], end_time=now)
-    session = db.create_session(user["id"], description=body.description, project_id=body.project_id, duration_minutes=body.duration_minutes)
+            _close_session(s, user["id"], now)
+    session = db.create_session(user["id"], description=body.description, project_id=body.project_id,
+                                 duration_minutes=body.duration_minutes, task_id=body.task_id)
 
     # Auto-add to Google Calendar immediately, sized to the planned duration —
     # corrected to the real end time once the session actually stops.
@@ -1027,13 +1068,17 @@ def add_session(body: SessionCreate, user: dict = Depends(get_current_user)) -> 
 
 @app.patch("/api/sessions/{session_id}")
 def patch_session(session_id: int, body: SessionPatch, user: dict = Depends(get_current_user)) -> dict:
-    if not db.get_session(session_id, user["id"]):
+    before = db.get_session(session_id, user["id"])
+    if not before:
         raise HTTPException(status_code=404, detail="Session not found.")
+    if body.end_time:
+        # Route the actual close through _close_session so it credits the
+        # linked task exactly once — apply any other patched fields first
+        # (e.g. total_break_minutes) so the credit calc sees them.
+        other_fields = body.model_dump(exclude_none=True, exclude={"end_time"})
+        session = db.update_session(session_id, user["id"], **other_fields) if other_fields else before
+        return _close_session(session, user["id"], body.end_time)
     updated = db.update_session(session_id, user["id"], **body.model_dump(exclude_none=True))
-    if body.end_time and updated:
-        # The session just stopped — true-up the calendar event's end time to
-        # when it actually ended instead of the originally planned duration.
-        updated = _push_session_event(user["id"], updated, body.end_time)
     return updated  # type: ignore[return-value]
 
 
@@ -1047,6 +1092,24 @@ def remove_session(session_id: int, user: dict = Depends(get_current_user)) -> d
     if not db.delete_session(session_id, user["id"]):
         raise HTTPException(status_code=404, detail="Session not found.")
     return {"deleted": session_id}
+
+
+# --- References (Context screen's saved-for-this-task working set) ----------
+@app.get("/api/references")
+def get_references(task_id: Optional[int] = None, user: dict = Depends(get_current_user)) -> List[dict]:
+    return db.list_references(user["id"], task_id=task_id)
+
+
+@app.post("/api/references")
+def add_reference(body: ReferenceCreate, user: dict = Depends(get_current_user)) -> dict:
+    return db.create_reference(user["id"], title=body.title, url=body.url, task_id=body.task_id, snippet=body.snippet)
+
+
+@app.delete("/api/references/{reference_id}")
+def remove_reference(reference_id: int, user: dict = Depends(get_current_user)) -> dict:
+    if not db.delete_reference(reference_id, user["id"]):
+        raise HTTPException(status_code=404, detail="Reference not found.")
+    return {"deleted": reference_id}
 
 
 # --- Projects (#10 project tracking) --------------------------------------------

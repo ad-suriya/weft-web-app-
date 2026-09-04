@@ -3,23 +3,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { LoginPage } from './LoginPage';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+
+// Signed-out home page — the WEFT marketing landing. Lazy so its letterpress
+// stylesheet and web fonts don't ship with the authenticated dashboard bundle.
+const LandingPage = lazy(() => import('./LandingPage'));
 import {
-  Loader2, Send, Copy, Check, Timer, CalendarPlus, Play, Pause, RotateCcw,
-  Plus, CalendarDays, RefreshCw, Trash2, Download, Clock, AlertTriangle, ArrowRight, Link2, Unlink,
-  MessageCircle, X, HelpCircle, Crosshair, SkipForward, Mic, Shield,
+  Loader2, Copy, Check, Timer, CalendarPlus, Play, Pause, RotateCcw, RefreshCw, Download, AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './api';
 import {
-  AgenticAction, ChatMessage, DecompositionPlan, Goal, Habit, MemoryFact, Mode, Status, SystemTrigger, Task,
-  TaskRisk, Urgency, Workflow, WorkflowPlan,
+  AgenticAction, ChatMessage, DecompositionPlan, FocusPrefs, Goal, Habit, MemoryFact, Mode, Session, Status,
+  SystemTrigger, Task, TaskRisk, Urgency, Workflow, WorkflowPlan,
 } from './types';
 import RemindersBell from './components/RemindersBell';
 import GoalsPanel from './components/GoalsPanel';
 import HabitsPanel from './components/HabitsPanel';
-import ExecutionPanel from './components/ExecutionPanel';
 import PanicPanel from './components/PanicPanel';
 import SearchBar from './components/SearchBar';
 import GuidedTour from './components/GuidedTour';
@@ -29,19 +29,21 @@ import WorkflowsPanel from './components/WorkflowsPanel';
 import DecomposePanel from './components/DecomposePanel';
 import MemoryPanel from './components/MemoryPanel';
 import Sidebar, { Section } from './components/Sidebar';
+import TodayScreen from './screens/TodayScreen';
+import MyWorkScreen from './screens/MyWorkScreen';
+import ContextScreen from './screens/ContextScreen';
+import DevicesScreen from './screens/DevicesScreen';
+import ActivityScreen from './screens/ActivityScreen';
+import SettingsScreen from './screens/SettingsScreen';
 import { ConsentModal } from './ConsentModal';
-import { DataPrivacyModal } from './DataPrivacyModal';
 
 const MODE_META: Record<Mode, { label: string; color: string; blurb: string }> = {
-  PLANNING_MODE: { label: 'Planning', color: '#2A6B5E', blurb: 'Deadline is days out — be strategic.' },
-  FOCUS_MODE: { label: 'Focus', color: '#1A1A1A', blurb: 'One task. Heads down. Execute.' },
-  PANIC_MODE: { label: 'Panic', color: '#D14D2A', blurb: 'Hours left — urgent, direct action only.' },
-  REVIEW_MODE: { label: 'Review', color: '#6B5BD1', blurb: 'Reflecting on what is done.' },
+  PLANNING_MODE: { label: 'Planning', color: '#2F7A64', blurb: 'Deadline is days out — be strategic.' },
+  FOCUS_MODE: { label: 'Focus', color: '#23271F', blurb: 'One task. Heads down. Execute.' },
+  PANIC_MODE: { label: 'Panic', color: '#C2632F', blurb: 'Hours left — urgent, direct action only.' },
+  REVIEW_MODE: { label: 'Review', color: '#6E64C4', blurb: 'Reflecting on what is done.' },
 };
-const URGENCY_COLOR: Record<Urgency, string> = { HIGH: '#D14D2A', MEDIUM: '#1A1A1A', LOW: '#6B7280' };
 const URGENCY_RANK: Record<Urgency, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
-const RISK_COLOR: Record<TaskRisk['risk_level'], string> = { high: '#D14D2A', medium: '#C99A2E', safe: '#2A6B5E' };
-const STATUS_LABEL: Record<Status, string> = { TODO: 'To Do', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed' };
 const ACTION_LABEL: Record<string, string> = {
   DRAFT_EMAIL: 'Drafted Email', CREATE_OUTLINE: 'Generated Outline',
   MOCK_QUESTIONS: 'Practice Questions', RESOURCE_LINK: 'Resource',
@@ -63,7 +65,6 @@ function loadOrCreateChatSessionId(): string {
 
 const pad = (n: number) => n.toString().padStart(2, '0');
 const fmtTimer = (s: number) => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 function dayLabel(iso: string): string {
@@ -96,7 +97,10 @@ export default function App() {
   const [consentAcceptedAt, setConsentAcceptedAt] = useState<string | null | undefined>(
     () => localStorage.getItem('weft_consent') || undefined,
   );
-  const [showDataPrivacy, setShowDataPrivacy] = useState(false);
+  // Focus Bridge preferences — local to this account (Today/Devices/Settings).
+  const [focusPrefs, setFocusPrefs] = useState<FocusPrefs>({
+    study_focus: false, hold_notifications: true, allow_list: ['Family', 'Emergency', 'Favorite contacts'],
+  });
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatSessionId, setChatSessionId] = useState<string>(loadOrCreateChatSessionId);
@@ -129,8 +133,8 @@ export default function App() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [memoryFacts, setMemoryFacts] = useState<MemoryFact[]>([]);
-  const [tab, setTab] = useState<Section>('plan');
-  const [chatOpen, setChatOpen] = useState(true);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [tab, setTab] = useState<Section>('today');
   const [showTutorial, setShowTutorial] = useState(false);
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
@@ -138,7 +142,6 @@ export default function App() {
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarBusy, setCalendarBusy] = useState(false);
 
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const guardRef = useRef(false); // prevents overlapping auto-reschedules
 
   // --- effects ---------------------------------------------------------------
@@ -225,8 +228,6 @@ export default function App() {
     setAuthLoading(false);
   }, []);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
-
   // Restore the conversation for this session id from Firestore (via the
   // backend) on startup/refresh — runs before render shows an empty chat.
   useEffect(() => {
@@ -257,13 +258,14 @@ export default function App() {
     api.getMemory().then(setMemoryFacts).catch(() => {});
     api.calendarStatus().then((s) => setCalendarConnected(s.connected)).catch(() => {});
 
-    // First-use consent: the profile is the source of truth.
+    // First-use consent + Focus Bridge prefs: the profile is the source of truth.
     api.getProfile()
       .then((p) => {
         const c = p.consent_accepted_at ?? null;
         setConsentAcceptedAt(c);
         if (c) localStorage.setItem('weft_consent', c);
         else localStorage.removeItem('weft_consent');
+        if (p.focus_prefs) setFocusPrefs(p.focus_prefs);
       })
       .catch(() => setConsentAcceptedAt((v) => (v ? v : null)));
 
@@ -287,6 +289,7 @@ export default function App() {
     const sync = async () => {
       try {
         const sessions = await api.listSessions();
+        setSessions(sessions);
         const active = sessions.filter((s) => !s.end_time).sort((a, b) => b.id - a.id)[0];
         if (!active) {
           setPomoSessionId(null);
@@ -309,6 +312,15 @@ export default function App() {
     const r = await api.acceptConsent();
     localStorage.setItem('weft_consent', r.consent_accepted_at);
     setConsentAcceptedAt(r.consent_accepted_at);
+  };
+
+  // Focus Bridge — local account prefs (no phone client yet to push them to).
+  // Optimistic: the toggle/chip list should feel instant.
+  const updateFocusPrefs = (patch: Partial<FocusPrefs>) => {
+    setFocusPrefs((prev) => ({ ...prev, ...patch }));
+    api.updateFocusPrefs(patch).catch(() => {
+      api.getProfile().then((p) => p.focus_prefs && setFocusPrefs(p.focus_prefs)).catch(() => {});
+    });
   };
 
   const handleLogout = () => {
@@ -362,7 +374,11 @@ export default function App() {
     if (pomoSeconds !== 0 || pomoSessionId == null) return;
     const id = pomoSessionId;
     setPomoSessionId(null);
-    api.patchSession(id, { end_time: new Date().toISOString() }).catch(() => {});
+    api.patchSession(id, { end_time: new Date().toISOString() })
+      // The backend just credited this session's elapsed time to its linked
+      // task (if any) — refetch so the progress bar reflects it.
+      .then(() => api.listTasks().then(setTasks))
+      .catch(() => {});
   }, [pomoSeconds, pomoSessionId]);
 
   // Autonomous rescheduling + deadline-risk refresh: poll status, auto-replan
@@ -370,6 +386,11 @@ export default function App() {
   // time" — every poll recomputes against the current clock, well inside
   // the "run hourly" requirement.
   useEffect(() => {
+    // Unauthenticated (signed out, or a background poll outlived an expired
+    // token) must not call an authenticated endpoint here: a 401 makes
+    // api.ts's handle() clear the session and hard-reload the page — with no
+    // guard this refetches 4s later, 401s again, and reloads again forever.
+    if (!isAuthenticated) return;
     const check = async () => {
       if (guardRef.current || loading) return;
       try {
@@ -405,7 +426,7 @@ export default function App() {
 
     return () => { clearInterval(id); clearTimeout(t); document.removeEventListener('visibilitychange', onVisible); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
+  }, [loading, isAuthenticated]);
 
   // Automatic task recovery — "inactivity detected" trigger: distinct from
   // the time-based "incomplete after end time" trigger above (which fires
@@ -517,7 +538,8 @@ export default function App() {
       if (data.system_trigger === 'START_POMODORO') {
         setPomoSeconds(POMODORO_SECONDS);
         setPomoRunning(true);
-        api.startSession('Pomodoro focus session', POMODORO_SECONDS / 60)
+        const forTask = data.tasks.find((t) => t.status === 'IN_PROGRESS') ?? null;
+        api.startSession(forTask ? forTask.task_name : 'Pomodoro focus session', POMODORO_SECONDS / 60, forTask?.id)
           .then((s) => setPomoSessionId(s.id))
           .catch(() => {});
       }
@@ -527,10 +549,6 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); }
   };
 
   // --- Voice dictation (Web Speech API) --------------------------------------
@@ -580,7 +598,9 @@ export default function App() {
     setPomoRunning(false);
     setPomoSeconds(POMODORO_SECONDS);
     if (pomoSessionId != null) {
-      api.patchSession(pomoSessionId, { end_time: new Date().toISOString() }).catch(() => {});
+      api.patchSession(pomoSessionId, { end_time: new Date().toISOString() })
+        .then(() => api.listTasks().then(setTasks))
+        .catch(() => {});
       setPomoSessionId(null);
     }
   };
@@ -703,9 +723,9 @@ export default function App() {
 
   // Search result selection: jump to the relevant tab. Tasks live on the
   // "plan" tab already, so there's nothing more specific to scroll to yet.
-  const selectSearchTask = (_task: Task) => setTab('plan');
-  const selectSearchGoal = () => setTab('goals');
-  const selectSearchHabit = () => setTab('habits');
+  const selectSearchTask = (_task: Task) => setTab('my-work');
+  const selectSearchGoal = () => setTab('my-work');
+  const selectSearchHabit = () => setTab('my-work');
 
   const connectCalendar = () => {
     // Calendar access is granted via the same full-page OAuth redirect as
@@ -795,6 +815,21 @@ export default function App() {
   const inProgressTask = useMemo(() => tasks.find((t) => t.status === 'IN_PROGRESS') ?? null, [tasks]);
   const executionTask = inProgressTask ?? priorityTask;
   const overdueTasks = useMemo(() => tasks.filter((t) => overdue.has(t.id)), [tasks, overdue]);
+  const lastSession = useMemo(
+    () =>
+      sessions
+        .filter((s) => s.end_time)
+        .sort((a, b) => new Date(b.end_time!).getTime() - new Date(a.end_time!).getTime())[0] ?? null,
+    [sessions],
+  );
+  const executionGoalTitle = useMemo(
+    () => (executionTask?.goal_id != null ? goals.find((g) => g.id === executionTask.goal_id)?.title ?? null : null),
+    [executionTask, goals],
+  );
+  const lastSessionTask = useMemo(
+    () => (lastSession?.task_id != null ? tasks.find((t) => t.id === lastSession.task_id) ?? null : null),
+    [lastSession, tasks],
+  );
 
   const markTaskDone = async (task: Task) => {
     const updated = await api.patchTask(task.id, { status: 'COMPLETED' });
@@ -813,15 +848,20 @@ export default function App() {
     }
     const updated = await api.patchTask(task.id, { status: 'IN_PROGRESS' });
     setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
-    setTab('plan');
+    setTab('today');
     setPomoSeconds(POMODORO_SECONDS);
     setPomoRunning(true);
-    api.startSession(task.task_name, POMODORO_SECONDS / 60).then((s) => setPomoSessionId(s.id)).catch(() => {});
+    // Starting a session auto-closes whatever was still running (server-side)
+    // and credits its elapsed time to whichever task it was linked to —
+    // refetch so that task's progress bar picks it up.
+    api.startSession(task.task_name, POMODORO_SECONDS / 60, task.id)
+      .then((s) => { setPomoSessionId(s.id); api.listTasks().then(setTasks).catch(() => {}); })
+      .catch(() => {});
   };
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#F5F2ED] text-[#1A1A1A] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F1F3EF] text-[#23271F] flex items-center justify-center">
         <div className="text-center space-y-4">
           <Loader2 className="w-8 h-8 animate-spin mx-auto" />
           <p>Loading...</p>
@@ -831,91 +871,52 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <LoginPage authError={authError} />;
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#F5F2ED]" />}>
+        <LandingPage authError={authError} />
+      </Suspense>
+    );
   }
 
   return (
-    <div className="h-screen bg-[#F5F2ED] text-[#1A1A1A] font-serif flex overflow-hidden">
+    <div className="h-screen bg-[#F1F3EF] text-[#23271F] font-serif flex overflow-hidden">
       {consentAcceptedAt === null && <ConsentModal onAccept={acceptConsent} />}
-      {showDataPrivacy && (
-        <DataPrivacyModal
-          consentAcceptedAt={typeof consentAcceptedAt === 'string' ? consentAcceptedAt : undefined}
-          onClose={() => setShowDataPrivacy(false)}
-          onDeleted={() => { setShowDataPrivacy(false); window.location.reload(); }}
-        />
-      )}
       {showTutorial && (
         <GuidedTour
           onDismiss={dismissTutorial}
           onStepChange={(selector) => {
-            if (selector === '[data-tour="task-toolbar"]' || selector === '[data-tour="nav-board"]') setTab('board');
-            else if (selector === '[data-tour="nav-plan"]') setTab('plan');
+            if (selector === '[data-tour="task-toolbar"]' || selector === '[data-tour="nav-my-work"]') setTab('my-work');
+            else if (selector === '[data-tour="nav-today"]' || selector === '[data-tour="capture"]') setTab('today');
+            else if (selector === '[data-tour="nav-workflows"]') setTab('workflows');
+            else if (selector === '[data-tour="nav-context"]') setTab('context');
           }}
         />
       )}
       {showExtensionPrompt && <ExtensionPrompt onDismiss={dismissExtensionPrompt} />}
-      <Sidebar active={tab} onSelect={setTab} badges={{ board: openTasks.length || undefined, workflows: workflows.length || undefined }} />
+      <Sidebar active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} />
 
       <div className="flex-grow flex flex-col min-w-0 h-full">
-        <Sidebar horizontal active={tab} onSelect={setTab} badges={{ board: openTasks.length || undefined, workflows: workflows.length || undefined }} />
+        <Sidebar horizontal active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} />
 
         {/* Top bar */}
-        <header className="relative z-50 flex flex-col md:flex-row justify-between md:items-center border-b border-[#1A1A1A] bg-white px-4 md:px-6 py-3 gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-sans text-[10px] uppercase tracking-widest font-bold opacity-60">Mode</span>
-            <span className="font-sans text-[11px] font-bold uppercase tracking-widest px-3 py-1 text-white" style={{ backgroundColor: modeMeta.color }}>
-              {modeMeta.label}
+        <header className="relative z-50 flex flex-col md:flex-row justify-between md:items-center border-b border-[#23271F]/14 bg-white px-4 md:px-6 py-3 gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center gap-2 font-sans text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full border border-[#23271F]/14 bg-white">
+              <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: modeMeta.color }} />
+              {modeMeta.label} mode
             </span>
           </div>
           <div className="flex items-center gap-3 md:justify-end flex-wrap">
             <div data-tour="search-bar">
               <SearchBar onSelectTask={selectSearchTask} onSelectGoal={selectSearchGoal} onSelectHabit={selectSearchHabit} />
             </div>
-            <RemindersBell />
+            <RemindersBell holdNotifications={focusPrefs.study_focus && focusPrefs.hold_notifications && pomoRunning} />
             <button
-              onClick={calendarConnected ? disconnectCalendar : connectCalendar}
-              disabled={calendarBusy}
-              title={calendarConnected ? 'Disconnect Google Calendar' : 'Sync your schedule with Google Calendar'}
-              className="font-sans text-[10px] uppercase tracking-widest font-bold px-3 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors flex items-center gap-1 disabled:opacity-40"
+              onClick={() => setTab('settings')}
+              title="Settings"
+              className="w-8 h-8 rounded-full bg-[#2F7A64] text-white grid place-items-center font-sans text-[11px] font-bold"
             >
-              {calendarBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : calendarConnected ? <Unlink className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
-              {calendarConnected ? 'Calendar Synced' : 'Sync Google Calendar'}
-            </button>
-            <button
-              data-tour="chat-toggle"
-              onClick={() => setChatOpen((s) => !s)}
-              title={chatOpen ? 'Close chat' : 'Open chat'}
-              className={`font-sans text-[10px] uppercase tracking-widest font-bold px-3 py-1 border border-[#1A1A1A] transition-colors flex items-center gap-1 ${
-                chatOpen ? 'bg-[#1A1A1A] text-white' : 'hover:bg-[#1A1A1A] hover:text-white'
-              }`}
-            >
-              <MessageCircle className="w-3 h-3" /> Chat
-            </button>
-            <button
-              onClick={() => { setTab('plan'); setShowTutorial(true); }}
-              title="Replay the guided tour"
-              aria-label="Replay the guided tour"
-              className="p-1.5 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors"
-            >
-              <HelpCircle className="w-3 h-3" />
-            </button>
-            {authUser && (
-              <div className="font-sans text-[10px] opacity-70">
-                {authUser.name}
-              </div>
-            )}
-            <button
-              onClick={() => setShowDataPrivacy(true)}
-              title="Privacy & data controls"
-              className="font-sans text-[10px] uppercase tracking-widest font-bold px-3 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors flex items-center gap-1"
-            >
-              <Shield className="w-3 h-3" /> Privacy
-            </button>
-            <button
-              onClick={handleLogout}
-              className="font-sans text-[10px] uppercase tracking-widest font-bold px-3 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors"
-            >
-              Logout
+              {(authUser?.name || '?').split(' ').map((s: string) => s[0]).slice(0, 2).join('').toUpperCase()}
             </button>
           </div>
         </header>
@@ -925,120 +926,167 @@ export default function App() {
       <div className="flex-grow flex flex-row min-h-0 overflow-hidden">
       <div className="flex-grow flex flex-col justify-between min-w-0 min-h-0 overflow-y-auto">
       <main className="w-full flex flex-col gap-5 p-4 md:p-8">
-          {/* Capped at a readable width — only the Task Board below breaks
-              out to fill the screen, everything above it reads better narrow. */}
-          <div className="w-full max-w-3xl flex flex-col gap-5">
+          <div className="w-full max-w-5xl flex flex-col gap-5">
           {showNotifPrompt && (
             <NotificationPrompt onEnable={enableNotifications} onDismiss={dismissNotifPrompt} />
           )}
 
-          {tab === 'plan' && (
-            <p className="font-sans text-xs opacity-60 -mb-2">{modeMeta.blurb}</p>
+          {/* Signals — proactive engine surfaces, shown on the Today console */}
+          {tab === 'today' && (
+            <>
+              <AnimatePresence>
+                {hasRisk && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                    className="bg-[#C2632F] text-white p-4 rounded-[14px] flex items-center justify-between gap-4 shadow-[0_12px_32px_-12px_rgba(35,39,31,0.22)]">
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="w-5 h-5 shrink-0" />
+                      <div className="font-sans text-xs">
+                        <span className="font-semibold uppercase tracking-wider">Plan drift detected</span>
+                        <p className="opacity-90">{overdue.size} overdue · {atRisk.size} at risk of missing a deadline.</p>
+                      </div>
+                    </div>
+                    <button onClick={rescheduleNow} disabled={busy !== ''}
+                      className="font-sans text-[11px] font-semibold uppercase tracking-wider px-4 py-2 rounded-[10px] bg-white text-[#C2632F] hover:bg-[#F1F3EF] transition-colors flex items-center gap-2 whitespace-nowrap">
+                      {busy === 'reschedule' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Replan now
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {(trigger === 'START_POMODORO' || pomoSessionId != null) && executionTask?.status !== 'IN_PROGRESS' && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                    className="bg-[#2C312A] text-white p-5 rounded-[16px] flex items-center justify-between gap-4 shadow-[0_14px_36px_-14px_rgba(35,39,31,0.4)]">
+                    <div className="flex items-center gap-4">
+                      <Timer className="w-6 h-6 text-[#C2632F]" />
+                      <div>
+                        <span className="font-sans text-[10px] uppercase tracking-wider font-semibold opacity-60">Focus Timer</span>
+                        <p className="font-serif text-4xl font-semibold tabular-nums tracking-tight">{fmtTimer(pomoSeconds)}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={togglePomo} className="p-3 rounded-[10px] border border-white/40 hover:bg-white hover:text-[#23271F] transition-colors" aria-label={pomoRunning ? 'Pause' : 'Play'}>
+                        {pomoRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                      </button>
+                      <button onClick={resetPomo} className="p-3 rounded-[10px] border border-white/40 hover:bg-white hover:text-[#23271F] transition-colors" aria-label="Reset">
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+                {trigger === 'PROMPT_CALENDAR_SYNC' && tasks.length > 0 && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                    className="bg-white border border-[#23271F]/12 p-5 rounded-[14px] flex items-center justify-between gap-4 shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
+                    <div className="flex items-center gap-4">
+                      <CalendarPlus className="w-6 h-6 text-[#2F7A64]" />
+                      <div>
+                        <span className="font-sans text-[10px] uppercase tracking-wider font-semibold opacity-60">Lock in the deadlines</span>
+                        <p className="font-sans text-sm">Export your plan so it lives in your real calendar.</p>
+                      </div>
+                    </div>
+                    <a href={api.calendarIcsUrl()}
+                      className="font-sans text-[11px] font-semibold uppercase tracking-wider px-4 py-3 rounded-[10px] bg-[#2F7A64] text-white hover:bg-[#245E4E] transition-colors whitespace-nowrap flex items-center gap-2">
+                      <Download className="w-3 h-3" /> Export .ics
+                    </a>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {action && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                    className="bg-white border border-[#23271F]/12 rounded-[14px] overflow-hidden shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
+                    <div className="flex items-center justify-between border-b border-[#23271F]/10 px-5 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-sans text-[9px] font-semibold px-2 py-1 rounded-full bg-[#C2632F] text-white uppercase tracking-wider">Started for you</span>
+                        <span className="font-sans text-[11px] font-semibold uppercase tracking-wider opacity-70">{ACTION_LABEL[action.action_type] ?? action.action_type}</span>
+                      </div>
+                      <button onClick={copyAction} className="font-sans text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1 hover:text-[#C2632F] transition-colors">
+                        {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}{copied ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <pre className="font-sans text-[13px] leading-relaxed p-5 whitespace-pre-wrap bg-[#F1F3EF] max-h-72 overflow-y-auto">{action.action_content}</pre>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
           )}
 
-          {/* Panic mode: suppress everything else, show exactly one task */}
-          {tab === 'plan' && mode === 'PANIC_MODE' && priorityTask && (
-            <PanicPanel task={priorityTask} onMarkDone={markTaskDone} />
+          {tab === 'today' && (
+            mode === 'PANIC_MODE' && priorityTask ? (
+              <PanicPanel task={priorityTask} onMarkDone={markTaskDone} />
+            ) : (
+              <TodayScreen
+                task={executionTask}
+                isActive={executionTask?.status === 'IN_PROGRESS'}
+                modeBlurb={modeMeta.blurb}
+                pomoSeconds={pomoSeconds}
+                pomoRunning={pomoRunning}
+                lastSession={lastSession}
+                lastSessionTask={lastSessionTask}
+                scheduled={scheduled}
+                atRisk={atRisk}
+                goalTitle={executionGoalTitle}
+                onToggleTimer={togglePomo}
+                onResetTimer={resetPomo}
+                onStartFocus={startFocusOnTask}
+                onMarkDone={markTaskDone}
+                onSkip={skipTask}
+                onGoMyWork={() => setTab('my-work')}
+                focusPrefs={focusPrefs}
+                onToggleStudyFocus={() => updateFocusPrefs({ study_focus: !focusPrefs.study_focus })}
+                habits={habits}
+                onCheckHabit={checkHabit}
+                messages={messages}
+                hasConversation={messages.some((m) => m.role === 'user')}
+                chatLoading={chatLoading}
+                thinking={loading}
+                input={input}
+                setInput={setInput}
+                onSend={send}
+                onNewChat={startNewChat}
+                quickReplies={quickReplies}
+                chatError={error}
+                listening={listening}
+                voiceSupported={voiceSupported}
+                onToggleVoice={toggleVoice}
+              />
+            )
           )}
 
-          {/* Active Execution Panel: one task, a timer, the next micro-step */}
-          {tab === 'plan' && mode !== 'PANIC_MODE' && executionTask && (
-            <ExecutionPanel
-              task={executionTask}
-              isActive={executionTask.status === 'IN_PROGRESS'}
-              pomoSeconds={pomoSeconds}
-              pomoRunning={pomoRunning}
+          {tab === 'my-work' && (
+            <MyWorkScreen
+              tasks={tasks}
+              goals={goals}
+              taskRisks={taskRisks}
+              atRisk={atRisk}
+              overdue={overdue}
+              showAdd={showAdd}
+              setShowAdd={setShowAdd}
+              newTask={newTask}
+              setNewTask={setNewTask}
+              busy={busy}
+              onAddTask={addTask}
+              onPlanDay={planDay}
+              onCycleStatus={cycleStatus}
               onStartFocus={startFocusOnTask}
-              onToggleTimer={togglePomo}
-              onResetTimer={resetPomo}
+              onSkip={skipTask}
               onMarkDone={markTaskDone}
+              onRemove={removeTask}
+              onLogHours={logCompletedHours}
+              onGcalUrl={gcalUrl}
+              habits={habits}
+              onAddGoal={addGoal}
+              onIncrementGoal={incGoal}
+              onDeleteGoal={deleteGoal}
+              onAddHabit={addHabit}
+              onCheckHabit={checkHabit}
+              onDeleteHabit={deleteHabit}
+              onDecompose={decomposeGoalDraft}
+              onCommitDecomposition={commitDecomposition}
             />
           )}
 
-          {/* Autonomous rescheduling banner */}
-          <AnimatePresence>
-            {hasRisk && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                className="bg-[#D14D2A] text-white p-4 flex items-center justify-between shadow-[5px_5px_0px_0px_#1A1A1A]">
-                <div className="flex items-center gap-3">
-                  <AlertTriangle className="w-5 h-5" />
-                  <div className="font-sans text-xs">
-                    <span className="font-bold uppercase tracking-widest">Plan drift detected</span>
-                    <p className="opacity-90">{overdue.size} overdue · {atRisk.size} at risk of missing a deadline.</p>
-                  </div>
-                </div>
-                <button onClick={rescheduleNow} disabled={busy !== ''}
-                  className="font-sans text-[11px] font-bold uppercase tracking-widest px-4 py-2 bg-white text-[#D14D2A] hover:bg-[#1A1A1A] hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap">
-                  {busy === 'reschedule' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Replan now
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* System triggers */}
-          <AnimatePresence>
-            {/* Suppressed when the Execution Panel above is already showing this
-                exact timer for the active task — otherwise it's a duplicate. */}
-            {(trigger === 'START_POMODORO' || pomoSessionId != null) && executionTask?.status !== 'IN_PROGRESS' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                className="bg-[#1A1A1A] text-white p-5 flex items-center justify-between shadow-[5px_5px_0px_0px_#D14D2A]">
-                <div className="flex items-center gap-4">
-                  <Timer className="w-6 h-6 text-[#D14D2A]" />
-                  <div>
-                    <span className="font-sans text-[10px] uppercase tracking-widest font-bold opacity-60">Focus Timer</span>
-                    <p className="text-4xl font-black tabular-nums tracking-tight">{fmtTimer(pomoSeconds)}</p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={togglePomo} className="p-3 border border-white/40 hover:bg-white hover:text-[#1A1A1A] transition-colors" aria-label={pomoRunning ? 'Pause' : 'Play'}>
-                    {pomoRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </button>
-                  <button onClick={resetPomo} className="p-3 border border-white/40 hover:bg-white hover:text-[#1A1A1A] transition-colors" aria-label="Reset">
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-            {trigger === 'PROMPT_CALENDAR_SYNC' && tasks.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                className="bg-white border border-[#1A1A1A] p-5 flex items-center justify-between shadow-[5px_5px_0px_0px_rgba(26,26,26,0.1)]">
-                <div className="flex items-center gap-4">
-                  <CalendarPlus className="w-6 h-6 text-[#2A6B5E]" />
-                  <div>
-                    <span className="font-sans text-[10px] uppercase tracking-widest font-bold opacity-60">Lock In The Deadlines</span>
-                    <p className="font-sans text-sm">Export your plan so it lives in your real calendar.</p>
-                  </div>
-                </div>
-                <a href={api.calendarIcsUrl()}
-                  className="font-sans text-[11px] font-bold uppercase tracking-widest px-4 py-3 bg-[#2A6B5E] text-white hover:opacity-90 transition-opacity whitespace-nowrap flex items-center gap-2">
-                  <Download className="w-3 h-3" /> Export .ics
-                </a>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Agentic action */}
-          <AnimatePresence>
-            {action && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                className="bg-white border border-[#1A1A1A] shadow-[5px_5px_0px_0px_rgba(209,77,42,1)]">
-                <div className="flex items-center justify-between border-b border-[#1A1A1A] px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-sans text-[9px] font-bold px-2 py-1 bg-[#D14D2A] text-white uppercase tracking-widest">Started For You</span>
-                    <span className="font-sans text-[11px] font-bold uppercase tracking-widest opacity-70">{ACTION_LABEL[action.action_type] ?? action.action_type}</span>
-                  </div>
-                  <button onClick={copyAction} className="font-sans text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 hover:text-[#D14D2A] transition-colors">
-                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}{copied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <pre className="font-sans text-[13px] leading-relaxed p-5 whitespace-pre-wrap bg-[#F5F2ED] max-h-72 overflow-y-auto">{action.action_content}</pre>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {tab === 'goals' && (
-            <GoalsPanel goals={goals} onAdd={addGoal} onIncrement={incGoal} onDelete={deleteGoal} />
-          )}
           {tab === 'workflows' && (
             <WorkflowsPanel
               workflows={workflows}
@@ -1049,293 +1097,47 @@ export default function App() {
               onDelete={deleteWorkflowById}
             />
           )}
-          {tab === 'breakdown' && (
-            <DecomposePanel onGenerate={decomposeGoalDraft} onCommit={commitDecomposition} />
-          )}
-          {tab === 'memory' && (
-            <MemoryPanel facts={memoryFacts} onSummarize={summarizeMemoryNow} />
-          )}
-          {tab === 'habits' && (
-            <HabitsPanel habits={habits} onAdd={addHabit} onCheck={checkHabit} onDelete={deleteHabit} />
+
+          {tab === 'context' && (
+            <ContextScreen
+              task={executionTask}
+              goals={goals}
+              tasks={tasks}
+              onGoMyWork={() => setTab('my-work')}
+              memoryFacts={memoryFacts}
+              onSummarizeMemory={summarizeMemoryNow}
+            />
           )}
 
-          {/* Overdue: surfaced separately from the timeline so it can't be missed */}
-          {tab === 'plan' && mode !== 'PANIC_MODE' && overdueTasks.length > 0 && (
-            <div>
-              <div className="flex items-center gap-4 border-b border-[#D14D2A] pb-2 mb-3">
-                <AlertTriangle className="w-4 h-4 text-[#D14D2A]" />
-                <span className="font-sans text-[10px] uppercase tracking-widest font-black text-[#D14D2A]">Overdue</span>
-                <div className="h-[1px] flex-grow bg-[#D14D2A] opacity-20" />
-              </div>
-              <div className="space-y-2">
-                {overdueTasks.map((t) => (
-                  <div key={t.id} className="flex items-center gap-3 bg-white border-l-4 border-l-[#D14D2A] border border-[#1A1A1A]/15 px-3 py-2">
-                    <span className="font-sans text-sm truncate flex-grow">{t.task_name}</span>
-                    {t.deadline && <span className="font-sans text-[10px] uppercase opacity-60 whitespace-nowrap">Was due {fmtDeadline(t.deadline)}</span>}
-                    <button onClick={() => markTaskDone(t)} className="font-sans text-[10px] uppercase font-bold tracking-widest px-2 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors whitespace-nowrap">
-                      Done
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {tab === 'devices' && (
+            <DevicesScreen task={executionTask} focusPrefs={focusPrefs} onUpdateFocusPrefs={updateFocusPrefs} />
           )}
 
-          {/* Today's plan (schedule) */}
-          {tab === 'plan' && mode !== 'PANIC_MODE' && scheduled.length > 0 && (
-            <div>
-              <div className="flex items-center gap-4 border-b border-[#1A1A1A] pb-2 mb-4">
-                <CalendarDays className="w-4 h-4" />
-                <span className="font-sans text-[10px] uppercase tracking-widest font-black">Your Plan</span>
-                <div className="h-[1px] flex-grow bg-[#1A1A1A] opacity-20" />
-                <a href={api.calendarIcsUrl()} className="font-sans text-[10px] uppercase font-bold tracking-widest flex items-center gap-1 hover:text-[#2A6B5E] transition-colors">
-                  <Download className="w-3 h-3" /> Export all
-                </a>
-              </div>
-              <div className="space-y-4">
-                {grouped.map(({ label, items }) => (
-                  <div key={label}>
-                    <p className="font-sans text-[10px] uppercase font-black tracking-widest opacity-50 mb-2">{label}</p>
-                    <div className="space-y-2">
-                      {items.map((t) => (
-                        <div key={t.id} className={`flex items-center gap-3 bg-white border-l-4 border border-[#1A1A1A]/15 px-3 py-2 ${atRisk.has(t.id) ? 'border-l-[#D14D2A]' : 'border-l-[#2A6B5E]'}`}>
-                          <Clock className="w-4 h-4 opacity-50 shrink-0" />
-                          <span className="font-sans text-xs font-bold tabular-nums whitespace-nowrap">
-                            {fmtTime(t.scheduled_start!)}<ArrowRight className="w-3 h-3 inline mx-1 opacity-40" />{fmtTime(t.scheduled_end!)}
-                          </span>
-                          <span className="font-sans text-sm truncate flex-grow">{t.task_name}</span>
-                          {atRisk.has(t.id) && <span className="font-sans text-[9px] font-bold uppercase text-[#D14D2A] whitespace-nowrap">At risk</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {tab === 'activity' && <ActivityScreen sessions={sessions} tasks={tasks} />}
+
+          {tab === 'settings' && (
+            <SettingsScreen
+              authUser={authUser}
+              consentAcceptedAt={consentAcceptedAt}
+              calendarConnected={calendarConnected}
+              calendarBusy={calendarBusy}
+              onConnectCalendar={connectCalendar}
+              onDisconnectCalendar={disconnectCalendar}
+              onLogout={handleLogout}
+              onReplayTour={() => { setTab('today'); setShowTutorial(true); }}
+              focusPrefs={focusPrefs}
+              onUpdateFocusPrefs={updateFocusPrefs}
+              onGoDevices={() => setTab('devices')}
+            />
           )}
           </div>
-
-          {/* Task Board — its own page now, breaking out of the max-w-3xl
-              column above to actually use the full screen width. */}
-          {tab === 'board' && (
-          <div className="flex-grow w-full">
-            <div data-tour="task-toolbar" className="flex items-center gap-3 border-b border-[#1A1A1A] pb-2 mb-4 flex-wrap">
-              <span className="font-sans text-[10px] uppercase tracking-widest font-black">Task Board</span>
-              <div className="h-[1px] flex-grow bg-[#1A1A1A] opacity-20 min-w-[20px]" />
-              <button onClick={() => setShowAdd((s) => !s)} className="font-sans text-[10px] uppercase font-bold tracking-widest flex items-center gap-1 px-2 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors">
-                <Plus className="w-3 h-3" /> Task
-              </button>
-              <button onClick={planDay} disabled={busy !== '' || tasks.length === 0} className="font-sans text-[10px] uppercase font-bold tracking-widest flex items-center gap-1 px-2 py-1 bg-[#1A1A1A] text-white hover:bg-[#333] disabled:opacity-40 transition-colors">
-                {busy === 'schedule' ? <Loader2 className="w-3 h-3 animate-spin" /> : <CalendarDays className="w-3 h-3" />} Plan my day
-              </button>
-            </div>
-
-            {showAdd && (
-              <div className="bg-white border border-[#1A1A1A] p-4 mb-4 space-y-3 shadow-[3px_3px_0px_0px_rgba(26,26,26,0.1)]">
-                <input className="w-full p-2 border border-[#1A1A1A]/30 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#1A1A1A]"
-                  placeholder="Task name" value={newTask.task_name} onChange={(e) => setNewTask({ ...newTask, task_name: e.target.value })} />
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <label className="font-sans text-[10px] uppercase font-bold tracking-widest flex flex-col gap-1">Deadline
-                    <input type="datetime-local" className="p-2 border border-[#1A1A1A]/30 font-sans text-xs normal-case" value={newTask.deadline} onChange={(e) => setNewTask({ ...newTask, deadline: e.target.value })} />
-                  </label>
-                  <label className="font-sans text-[10px] uppercase font-bold tracking-widest flex flex-col gap-1">Est. minutes
-                    <input type="number" min={5} step={5} className="p-2 border border-[#1A1A1A]/30 font-sans text-xs" value={newTask.estimated_minutes} onChange={(e) => setNewTask({ ...newTask, estimated_minutes: Number(e.target.value) })} />
-                  </label>
-                  <label className="font-sans text-[10px] uppercase font-bold tracking-widest flex flex-col gap-1">Urgency
-                    <select className="p-2 border border-[#1A1A1A]/30 font-sans text-xs" value={newTask.urgency} onChange={(e) => setNewTask({ ...newTask, urgency: e.target.value as Urgency })}>
-                      <option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
-                    </select>
-                  </label>
-                </div>
-                {goals.length > 0 && (
-                  <label className="font-sans text-[10px] uppercase font-bold tracking-widest flex flex-col gap-1">Link to goal (optional)
-                    <select className="p-2 border border-[#1A1A1A]/30 font-sans text-xs normal-case" value={newTask.goal_id} onChange={(e) => setNewTask({ ...newTask, goal_id: e.target.value })}>
-                      <option value="">— none —</option>
-                      {goals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
-                    </select>
-                  </label>
-                )}
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setShowAdd(false)} className="font-sans text-[10px] uppercase font-bold tracking-widest px-3 py-2">Cancel</button>
-                  <button onClick={addTask} disabled={!newTask.task_name.trim()} className="font-sans text-[10px] uppercase font-bold tracking-widest px-3 py-2 bg-[#1A1A1A] text-white disabled:opacity-40">Add task</button>
-                </div>
-              </div>
-            )}
-
-            {tasks.length === 0 ? (
-              <div className="font-sans text-sm opacity-50 italic py-10 text-center border border-dashed border-[#1A1A1A]/30">
-                Your tasks will appear here once you tell me what's on your plate — or add one manually.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {tasks.map((task) => {
-                  const done = task.status === 'COMPLETED';
-                  const taskRisk = taskRisks[task.id] ?? task.risk ?? null;
-                  return (
-                    <div key={task.id} className={`bg-white border border-[#1A1A1A] p-4 flex flex-col shadow-[3px_3px_0px_0px_rgba(26,26,26,0.1)] ${done ? 'opacity-50' : ''}`}>
-                      <div className="flex justify-between items-start mb-2 gap-2">
-                        <span className="font-sans text-[9px] font-bold px-2 py-1 text-white uppercase" style={{ backgroundColor: URGENCY_COLOR[task.urgency] }}>{task.urgency}</span>
-                        <div className="flex items-center gap-2">
-                          {overdue.has(task.id) && <span className="font-sans text-[9px] font-bold uppercase text-[#D14D2A]">Overdue</span>}
-                          <span className="font-sans text-[9px] font-bold uppercase opacity-50">{STATUS_LABEL[task.status]}</span>
-                        </div>
-                      </div>
-                      <h3 className={`text-lg font-bold tracking-tight leading-tight mb-1 ${done ? 'line-through' : ''}`}>{task.task_name}</h3>
-                      <div className="font-sans text-[10px] uppercase tracking-wide opacity-60 mb-3 flex flex-wrap gap-x-3">
-                        <span>~{task.estimated_minutes} min</span>
-                        {task.deadline && <span>Due {fmtDeadline(task.deadline)}</span>}
-                      </div>
-                      {!done && task.deadline && (
-                        <div className="mb-3 pb-3 border-b border-dashed border-gray-300 space-y-1.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {taskRisk && (
-                              <span className="font-sans text-[9px] font-bold px-2 py-0.5 text-white uppercase tracking-widest"
-                                style={{ backgroundColor: RISK_COLOR[taskRisk.risk_level] }}>
-                                {taskRisk.risk_level} risk · {taskRisk.risk_percent}%
-                              </span>
-                            )}
-                            <label className="font-sans text-[9px] uppercase tracking-wide opacity-60 flex items-center gap-1 ml-auto">
-                              Logged
-                              <input
-                                key={`${task.id}-${task.completed_minutes ?? 0}`}
-                                type="number" min={0} step={0.5}
-                                defaultValue={((task.completed_minutes ?? 0) / 60).toFixed(1)}
-                                onBlur={(e) => {
-                                  const h = Number(e.target.value);
-                                  if (!Number.isNaN(h)) logCompletedHours(task, h);
-                                }}
-                                className="w-14 p-1 border border-[#1A1A1A]/30 font-sans text-[11px] normal-case"
-                              />
-                              h
-                            </label>
-                          </div>
-                          {taskRisk && <p className="font-sans text-[11px] italic opacity-70">{taskRisk.reason}</p>}
-                        </div>
-                      )}
-                      <div className="mb-3 pt-3 border-t border-dashed border-gray-300">
-                        <span className="font-sans text-[9px] font-bold uppercase block mb-1 opacity-60">Next Step</span>
-                        <p className="font-sans text-[12px] leading-snug">{task.next_micro_step || '—'}</p>
-                      </div>
-                      <div className="mt-auto flex items-center gap-2 flex-wrap">
-                        <button onClick={() => cycleStatus(task)} className="font-sans text-[10px] uppercase font-bold tracking-widest px-2 py-1 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors">
-                          {task.status === 'TODO' ? 'Start' : task.status === 'IN_PROGRESS' ? 'Done' : 'Reopen'}
-                        </button>
-                        {!done && (
-                          <button onClick={() => startFocusOnTask(task)}
-                            title={task.status === 'IN_PROGRESS' ? 'Already the active focus task' : 'Focus on this task now'}
-                            disabled={task.status === 'IN_PROGRESS'}
-                            className="font-sans text-[10px] uppercase font-bold tracking-widest px-2 py-1 border border-[#D14D2A] text-[#D14D2A] hover:bg-[#D14D2A] hover:text-white transition-colors disabled:opacity-40 flex items-center gap-1">
-                            <Crosshair className="w-3 h-3" /> Focus
-                          </button>
-                        )}
-                        {!done && task.scheduled_start && (
-                          <button onClick={() => skipTask(task)} title="Move this task — frees the slot and redistributes the remaining work into the next free time"
-                            className="font-sans text-[10px] uppercase font-bold tracking-widest px-2 py-1 border border-[#1A1A1A]/30 hover:border-[#1A1A1A] transition-colors flex items-center gap-1">
-                            <SkipForward className="w-3 h-3" /> Skip
-                          </button>
-                        )}
-                        <a href={api.taskIcsUrl(task.id)} title="Download .ics" className="p-1 border border-[#1A1A1A]/30 hover:border-[#2A6B5E] hover:text-[#2A6B5E] transition-colors"><Download className="w-3.5 h-3.5" /></a>
-                        <a href={gcalUrl(task)} target="_blank" rel="noreferrer" title="Add to Google Calendar" className="p-1 border border-[#1A1A1A]/30 hover:border-[#2A6B5E] hover:text-[#2A6B5E] transition-colors"><CalendarPlus className="w-3.5 h-3.5" /></a>
-                        <button onClick={() => removeTask(task.id)} title="Delete" className="p-1 border border-[#1A1A1A]/30 hover:border-[#D14D2A] hover:text-[#D14D2A] transition-colors ml-auto"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          )}
       </main>
 
-      <footer className="px-4 md:px-8 py-3 border-t border-[#1A1A1A] bg-white">
-        <div className="font-sans text-[10px] uppercase font-black opacity-60">Proactive Engine Online</div>
+      <footer className="px-4 md:px-8 py-3 border-t border-[#23271F]/14 bg-white">
+        <div className="font-sans text-[10px] uppercase font-semibold opacity-60">Proactive Engine Online</div>
       </footer>
       </div>
 
-      {/* Chat: a real flex sibling of the content column above, not an
-          overlay — opening it shrinks the content width instead of
-          covering it. Stays mounted (width animates to 0) so scroll
-          position / in-progress typing survive a toggle. */}
-      <aside className={`shrink-0 bg-white border-l border-[#1A1A1A] flex flex-col overflow-hidden transition-[width] duration-200 ${
-        chatOpen ? 'w-full sm:w-[420px]' : 'w-0 border-l-0'
-      }`}>
-        <div className="flex items-center justify-between gap-3 border-b border-[#1A1A1A] px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-[#D14D2A] animate-pulse" />
-            <span className="font-sans text-[10px] uppercase tracking-widest font-black">Conversation</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button onClick={startNewChat} aria-label="New chat" title="New chat"
-              className="p-1 hover:text-[#D14D2A]">
-              <Plus className="w-4 h-4" />
-            </button>
-            <button onClick={() => setChatOpen(false)} aria-label="Close chat" className="p-1 hover:text-[#D14D2A]">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-grow overflow-y-auto px-5 py-4 space-y-4">
-          {chatLoading && (
-            <div className="flex justify-center pt-8">
-              <Loader2 className="w-5 h-5 animate-spin text-[#D14D2A]" />
-            </div>
-          )}
-          {!chatLoading && messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] font-sans text-sm leading-relaxed px-4 py-3 ${
-                m.role === 'user' ? 'bg-[#1A1A1A] text-white'
-                  : m.system ? 'bg-[#2A6B5E]/10 border border-[#2A6B5E]/40 text-[#1A1A1A] italic'
-                  : 'bg-[#F5F2ED] border border-[#1A1A1A]/15'
-              }`}>
-                {m.system && <span className="block text-[9px] uppercase tracking-widest font-bold text-[#2A6B5E] mb-1 not-italic">System</span>}
-                {m.text}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-[#F5F2ED] border border-[#1A1A1A]/15 px-4 py-3 flex items-center gap-2 font-sans text-xs uppercase tracking-widest">
-                <Loader2 className="w-4 h-4 animate-spin text-[#D14D2A]" /> Thinking
-              </div>
-            </div>
-          )}
-          <div ref={chatEndRef} />
-        </div>
-
-        {quickReplies.length > 0 && !loading && (
-          <div className="px-5 pb-2 flex flex-wrap gap-2">
-            {quickReplies.map((q, i) => (
-              <button key={i} onClick={() => send(q)}
-                className="font-sans text-[11px] font-bold px-3 py-2 border border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors text-left">
-                {q}
-              </button>
-            ))}
-          </div>
-        )}
-        {error && <div className="px-5 py-2 font-sans text-[11px] font-bold uppercase text-[#D14D2A]">{error}</div>}
-
-        <div className="border-t border-[#1A1A1A] p-3 flex gap-2 items-end">
-          <textarea
-            className="flex-grow h-16 p-3 border border-[#1A1A1A]/30 bg-white font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#1A1A1A] resize-none"
-            placeholder={listening ? 'Listening…' : "Tell me what's due and where you're stuck…"}
-            value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={loading || chatLoading} />
-          {voiceSupported && (
-            <button onClick={toggleVoice} disabled={loading || chatLoading}
-              className={`h-16 px-4 flex items-center justify-center border border-[#1A1A1A] transition-colors disabled:opacity-40 ${
-                listening ? 'bg-[#D14D2A] text-white animate-pulse' : 'bg-white text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white'
-              }`}
-              aria-label={listening ? 'Stop dictation' : 'Dictate with voice'}
-              aria-pressed={listening} title={listening ? 'Stop dictation' : 'Dictate with voice'}>
-              <Mic className="w-4 h-4" />
-            </button>
-          )}
-          <button onClick={() => send(input)} disabled={loading || chatLoading || !input.trim()}
-            className="h-16 px-5 bg-[#1A1A1A] hover:bg-[#333] disabled:bg-gray-400 text-white flex items-center justify-center shadow-[3px_3px_0px_0px_#D14D2A] transition-colors" aria-label="Send">
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-      </aside>
       </div>
       </div>
     </div>

@@ -59,7 +59,7 @@ export default function SearchBar({ onSelectTask, onSelectGoal, onSelectHabit }:
 
   return (
     <div ref={boxRef} className="relative">
-      <div className="flex items-center gap-2 border border-[#1A1A1A] px-3 py-1.5 bg-white">
+      <div className="flex items-center gap-2 border border-[#23271F]/14 px-3 py-1.5 bg-white">
         <Search className="w-3.5 h-3.5 opacity-60 shrink-0" />
         <input
           value={query}
@@ -78,47 +78,47 @@ export default function SearchBar({ onSelectTask, onSelectGoal, onSelectHabit }:
       </div>
 
       {open && results && (
-        <div className="absolute top-full mt-1 right-0 w-80 bg-white border border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,0.15)] max-h-96 overflow-y-auto z-50">
+        <div className="absolute top-full mt-1 right-0 w-80 bg-white border border-[#23271F]/14 shadow-[0_6px_20px_rgba(35,39,31,0.08)] max-h-96 overflow-y-auto z-50">
           {total === 0 ? (
             <div className="p-3 font-sans text-xs opacity-50 italic">No matches.</div>
           ) : (
             <>
               {results.tasks.length > 0 && (
                 <div className="p-2">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-widest opacity-50 px-1 mb-1">Tasks</p>
+                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Tasks</p>
                   {results.tasks.map((t) => (
                     <button key={t.id} onClick={() => { onSelectTask(t); clear(); }}
-                      className="w-full text-left px-2 py-1.5 hover:bg-[#F5F2ED] font-sans text-sm truncate block">
+                      className="w-full text-left px-2 py-1.5 hover:bg-[#F1F3EF] font-sans text-sm truncate block">
                       {t.task_name}
                     </button>
                   ))}
                 </div>
               )}
               {results.goals.length > 0 && (
-                <div className="p-2 border-t border-[#1A1A1A]/10">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-widest opacity-50 px-1 mb-1">Goals</p>
+                <div className="p-2 border-t border-[#23271F]/10">
+                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Goals</p>
                   {results.goals.map((g) => (
                     <button key={g.id} onClick={() => { onSelectGoal(); clear(); }}
-                      className="w-full text-left px-2 py-1.5 hover:bg-[#F5F2ED] font-sans text-sm truncate block">
+                      className="w-full text-left px-2 py-1.5 hover:bg-[#F1F3EF] font-sans text-sm truncate block">
                       {g.title}
                     </button>
                   ))}
                 </div>
               )}
               {results.habits.length > 0 && (
-                <div className="p-2 border-t border-[#1A1A1A]/10">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-widest opacity-50 px-1 mb-1">Habits</p>
+                <div className="p-2 border-t border-[#23271F]/10">
+                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Habits</p>
                   {results.habits.map((h) => (
                     <button key={h.id} onClick={() => { onSelectHabit(); clear(); }}
-                      className="w-full text-left px-2 py-1.5 hover:bg-[#F5F2ED] font-sans text-sm truncate block">
+                      className="w-full text-left px-2 py-1.5 hover:bg-[#F1F3EF] font-sans text-sm truncate block">
                       {h.name}
                     </button>
                   ))}
                 </div>
               )}
               {results.sessions.length > 0 && (
-                <div className="p-2 border-t border-[#1A1A1A]/10">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-widest opacity-50 px-1 mb-1">Focus Sessions</p>
+                <div className="p-2 border-t border-[#23271F]/10">
+                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Focus Sessions</p>
                   {results.sessions.map((s) => (
                     <div key={s.id} className="px-2 py-1.5 font-sans text-sm truncate opacity-70">
                       {s.description || 'Focus session'}

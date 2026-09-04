@@ -78,6 +78,10 @@ export interface Session {
   id: number;
   description: string;
   project_id: number | null;
+  // Which task this focus session is/was working on — set when started from
+  // a task so ending it can auto-credit completed_minutes, and so a past
+  // session can be resumed as the exact task it belonged to.
+  task_id?: number | null;
   start_time: string;
   end_time: string | null;
   duration_minutes: number;
@@ -86,6 +90,32 @@ export interface Session {
   total_break_minutes: number;
   created_at: string;
   updated_at: string;
+}
+
+// Focus Bridge preferences — local to this account (Settings/Devices/Today).
+export interface FocusPrefs {
+  study_focus: boolean;
+  hold_notifications: boolean;
+  allow_list: string[];
+}
+
+export interface UserProfile {
+  id: string;
+  name?: string;
+  email?: string;
+  consent_accepted_at?: string;
+  consent_version?: string;
+  focus_prefs: FocusPrefs;
+}
+
+// A saved reference for one work item — Context screen's "working set".
+export interface Reference {
+  id: number;
+  title: string;
+  url: string;
+  task_id: number | null;
+  snippet: string;
+  created_at: string;
 }
 
 export interface ChatResponse {

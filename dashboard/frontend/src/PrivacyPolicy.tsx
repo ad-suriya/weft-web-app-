@@ -6,19 +6,19 @@ import React from 'react';
 export const PrivacyPolicy: React.FC = () => {
   const Updated = '3 September 2026';
   return (
-    <div className="min-h-screen bg-[#F5F2ED] text-[#1A1A1A] font-serif">
+    <div className="min-h-screen bg-[#F1F3EF] text-[#23271F] font-serif">
       <div className="mx-auto max-w-2xl px-5 py-12 md:py-16">
         <a
           href="/"
-          className="font-sans text-[10px] uppercase tracking-widest font-bold text-[#2A6B5E] hover:text-[#1A1A1A] transition-colors"
+          className="font-sans text-[10px] uppercase tracking-wider font-bold text-[#2F7A64] hover:text-[#23271F] transition-colors"
         >
           &larr; Back to WEFT
         </a>
 
-        <h1 className="mt-6 text-4xl md:text-5xl font-black italic tracking-tight">Privacy Policy</h1>
-        <p className="mt-2 font-sans text-xs uppercase tracking-widest opacity-60">Last updated {Updated}</p>
+        <h1 className="mt-6 text-4xl md:text-5xl font-semibold italic tracking-tight">Privacy Policy</h1>
+        <p className="mt-2 font-sans text-xs uppercase tracking-wider opacity-60">Last updated {Updated}</p>
 
-        <div className="mt-8 bg-white border-2 border-[#1A1A1A] shadow-[8px_8px_0px_0px_#1A1A1A] p-6 md:p-8 space-y-8 font-sans text-sm leading-relaxed">
+        <div className="mt-8 bg-white border-2 border-[#23271F]/14 shadow-[0_20px_50px_-16px_rgba(35,39,31,0.28)] p-6 md:p-8 space-y-8 font-sans text-sm leading-relaxed">
           <section className="space-y-2">
             <h2 className="font-serif text-xl font-bold">The short version</h2>
             <p>
@@ -41,7 +41,7 @@ export const PrivacyPolicy: React.FC = () => {
                 ['Account basics', 'Your Google account name, email and profile picture, used to sign you in and separate your data from other users.'],
               ].map(([t, d]) => (
                 <li key={t} className="flex gap-3">
-                  <span className="text-[#2A6B5E] font-bold">✓</span>
+                  <span className="text-[#2F7A64] font-bold">✓</span>
                   <span>
                     <b>{t}.</b> {d}
                   </span>
@@ -61,7 +61,7 @@ export const PrivacyPolicy: React.FC = () => {
                 'Payment information or private messages',
               ].map(x => (
                 <li key={x} className="flex gap-3">
-                  <span className="text-[#D14D2A] font-bold">✕</span>
+                  <span className="text-[#C2632F] font-bold">✕</span>
                   <span>{x}</span>
                 </li>
               ))}
@@ -112,7 +112,7 @@ export const PrivacyPolicy: React.FC = () => {
           </section>
         </div>
 
-        <p className="mt-8 text-center font-sans text-[11px] uppercase tracking-widest opacity-50">
+        <p className="mt-8 text-center font-sans text-[11px] uppercase tracking-wider opacity-50">
           WEFT — one goal, every device, one continuous workflow
         </p>
       </div>

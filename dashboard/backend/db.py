@@ -362,13 +362,19 @@ def get_session(session_id: int, user_id: str) -> Optional[dict]:
     return _get("sessions", session_id, user_id)
 
 
-def create_session(user_id: str, description: str = "", project_id: Optional[int] = None, duration_minutes: int = 0) -> dict:
+def create_session(user_id: str, description: str = "", project_id: Optional[int] = None,
+                    duration_minutes: int = 0, task_id: Optional[int] = None) -> dict:
     ts = now_iso()
     return _save("sessions", {
         "id": _next_id("sessions"),
         "user_id": user_id,
         "description": description,
         "project_id": project_id,
+        # Which task this focus session is working on, if any — lets ending
+        # the session auto-credit its elapsed time to the task (see
+        # credit_task_time) and lets the UI resume the exact task a past
+        # session belonged to, instead of just showing its free-text label.
+        "task_id": task_id,
         "start_time": ts,
         "end_time": None,
         "duration_minutes": duration_minutes,
@@ -383,7 +389,7 @@ def create_session(user_id: str, description: str = "", project_id: Optional[int
 
 def update_session(session_id: int, user_id: str, **fields) -> Optional[dict]:
     allowed = {"description", "project_id", "end_time", "duration_minutes",
-               "is_paused", "breaks_taken", "total_break_minutes", "calendar_event_id"}
+               "is_paused", "breaks_taken", "total_break_minutes", "calendar_event_id", "task_id"}
     sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not sets:
         return get_session(session_id, user_id)
@@ -393,6 +399,49 @@ def update_session(session_id: int, user_id: str, **fields) -> Optional[dict]:
 
 def delete_session(session_id: int, user_id: str) -> bool:
     return _delete("sessions", session_id, user_id)
+
+
+# --- References (Context screen's "saved for this task" working set) --------
+# Deliberately thin: a title, a URL, an optional short snippet the user
+# selected themselves, and which task it belongs to. Never raw page HTML or
+# full text — see the Privacy Policy's "what we never collect".
+def list_references(user_id: str, task_id: Optional[int] = None) -> list[dict]:
+    refs = _all("references", user_id)
+    if task_id is not None:
+        refs = [r for r in refs if r.get("task_id") == task_id]
+    return sorted(refs, key=lambda r: r["id"], reverse=True)
+
+
+def create_reference(user_id: str, title: str, url: str = "", task_id: Optional[int] = None,
+                      snippet: str = "") -> dict:
+    ts = now_iso()
+    return _save("references", {
+        "id": _next_id("references"),
+        "user_id": user_id,
+        "title": title,
+        "url": url,
+        "task_id": task_id,
+        "snippet": snippet,
+        "created_at": ts,
+    })
+
+
+def delete_reference(reference_id: int, user_id: str) -> bool:
+    return _delete("references", reference_id, user_id)
+
+
+def credit_task_time(task_id: int, user_id: str, minutes: float) -> Optional[dict]:
+    """Adds `minutes` of logged work to a task's completed_minutes — called
+    when a focus session linked to that task ends, so the deadline-risk
+    prediction and every progress bar reflect real focus time instead of
+    only what someone hand-typed into the "Logged" field."""
+    if minutes <= 0:
+        return None
+    task = get_task(task_id, user_id)
+    if not task:
+        return None
+    new_total = max(0, round((task.get("completed_minutes") or 0) + minutes))
+    return update_task(task_id, user_id, completed_minutes=new_total)
 
 
 # --- Workflows (AI Workflow Builder) -------------------------------------------
@@ -529,12 +578,39 @@ def set_user_consent(user_id: str, version: str) -> dict:
     return _save("users", existing)
 
 
+DEFAULT_FOCUS_PREFS = {
+    "study_focus": False,
+    "hold_notifications": True,
+    "allow_list": ["Family", "Emergency", "Favorite contacts"],
+}
+
+
+def get_focus_prefs(user_id: str) -> dict:
+    """Focus Bridge preferences — a local, per-account setting (there is no
+    phone client to actually push these to yet; see focus_prefs' use in
+    main.py). Missing keys fall back to the defaults so older profiles don't
+    need a migration."""
+    existing = (get_user(user_id) or {}).get("focus_prefs") or {}
+    return {**DEFAULT_FOCUS_PREFS, **existing}
+
+
+def set_focus_prefs(user_id: str, **fields) -> dict:
+    allowed = {"study_focus", "hold_notifications", "allow_list"}
+    sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    merged = {**get_focus_prefs(user_id), **sets}
+    existing = get_user(user_id) or {"id": user_id, "created_at": now_iso()}
+    existing["focus_prefs"] = merged
+    existing["updated_at"] = now_iso()
+    _save("users", existing)
+    return merged
+
+
 # Every per-user collection that holds a `user_id`-tagged doc. `users` is
 # deliberately excluded from delete (identity + consent survive); `memory` is a
 # per-user subcollection handled separately.
 _USER_COLLECTIONS = (
     "tasks", "workflows", "sessions", "goals", "habits", "habit_logs",
-    "reminders", "projects", "task_events", "chats",
+    "reminders", "projects", "task_events", "chats", "references",
 )
 
 

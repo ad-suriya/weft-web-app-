@@ -1,7 +1,17 @@
 import React from 'react';
-import { CalendarDays, LayoutGrid, Target, Repeat, Workflow as WorkflowIcon, GitBranch, Brain, LucideIcon } from 'lucide-react';
+import {
+  Target,
+  ListChecks,
+  GitBranch,
+  Layers,
+  MonitorSmartphone,
+  Activity,
+  Settings2,
+  LucideIcon,
+} from 'lucide-react';
 
-export type Section = 'plan' | 'board' | 'goals' | 'habits' | 'workflows' | 'breakdown' | 'memory';
+// Console IA, ported from the WEFT redesign artifact.
+export type Section = 'today' | 'my-work' | 'workflows' | 'context' | 'devices' | 'activity' | 'settings';
 
 interface NavItem {
   id: Section;
@@ -10,13 +20,13 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'plan', label: 'Plan', icon: CalendarDays },
-  { id: 'board', label: 'Tasks', icon: LayoutGrid },
-  { id: 'breakdown', label: 'Breakdown', icon: GitBranch },
-  { id: 'goals', label: 'Goals', icon: Target },
-  { id: 'habits', label: 'Habits', icon: Repeat },
-  { id: 'workflows', label: 'Workflows', icon: WorkflowIcon },
-  { id: 'memory', label: 'Memory', icon: Brain },
+  { id: 'today', label: 'Today', icon: Target },
+  { id: 'my-work', label: 'My Work', icon: ListChecks },
+  { id: 'workflows', label: 'Workflows', icon: GitBranch },
+  { id: 'context', label: 'Context', icon: Layers },
+  { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
+  { id: 'activity', label: 'Activity', icon: Activity },
+  { id: 'settings', label: 'Settings', icon: Settings2 },
 ];
 
 interface Props {
@@ -31,16 +41,20 @@ interface Props {
 export default function Sidebar({ active, onSelect, badges = {}, horizontal = false }: Props) {
   if (horizontal) {
     return (
-      <nav className="relative z-50 flex lg:hidden border-b border-[#1A1A1A] bg-white overflow-x-auto">
+      <nav className="relative z-50 flex lg:hidden border-b border-[#23271F]/14 bg-white overflow-x-auto">
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => onSelect(id)} data-tour={`nav-${id}`}
-            className={`flex items-center gap-1.5 px-4 py-3 font-sans text-[10px] uppercase font-black tracking-widest whitespace-nowrap shrink-0 ${
-              active === id ? 'bg-[#1A1A1A] text-white' : 'opacity-70 hover:opacity-100'
-            }`}>
+          <button
+            key={id}
+            onClick={() => onSelect(id)}
+            data-tour={`nav-${id}`}
+            className={`flex items-center gap-1.5 px-4 py-3 font-sans text-[10px] uppercase font-semibold tracking-wider whitespace-nowrap shrink-0 rounded-none ${
+              active === id ? 'bg-[#E6F0EB] text-[#245E4E]' : 'opacity-70 hover:opacity-100'
+            }`}
+          >
             <Icon className="w-3.5 h-3.5" />
             {label}
             {!!badges[id] && (
-              <span className="ml-1 px-1.5 bg-[#D14D2A] text-white rounded-full text-[9px]">{badges[id]}</span>
+              <span className="ml-1 px-1.5 bg-[#C2632F] text-white rounded-full text-[9px]">{badges[id]}</span>
             )}
           </button>
         ))}
@@ -49,25 +63,37 @@ export default function Sidebar({ active, onSelect, badges = {}, horizontal = fa
   }
 
   return (
-    <nav className="hidden lg:flex flex-col w-56 shrink-0 border-r border-[#1A1A1A] bg-white h-screen sticky top-0">
-      <div className="px-5 py-6 border-b border-[#1A1A1A]">
-        <div className="flex items-center gap-2 mb-1">
+    <nav className="hidden lg:flex flex-col w-56 shrink-0 border-r border-[#23271F]/14 bg-white h-screen sticky top-0">
+      <div className="px-5 py-6 border-b border-[#23271F]/12">
+        <div className="flex items-center gap-2 mb-1.5">
           <img src="/logo-mark.png" alt="" className="h-5 w-5" />
-          <span className="font-sans text-[9px] uppercase tracking-widest font-bold opacity-60">Task Weave</span>
+          <span className="font-sans text-[9px] uppercase tracking-wider font-semibold opacity-60">WEFT</span>
         </div>
-        <h1 className="text-2xl font-black italic tracking-tight leading-none font-serif">Remember.<br />Connect. Execute.</h1>
+        <h1 className="text-2xl font-semibold italic tracking-tight leading-none font-serif">
+          Remember.
+          <br />
+          Connect. Execute.
+        </h1>
       </div>
 
       <div className="flex flex-col gap-1 p-3 flex-grow">
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => onSelect(id)} data-tour={`nav-${id}`}
-            className={`flex items-center gap-3 px-3 py-2.5 font-sans text-[11px] uppercase font-black tracking-widest transition-colors text-left ${
-              active === id ? 'bg-[#1A1A1A] text-white' : 'hover:bg-[#F5F2ED]'
-            }`}>
+          <button
+            key={id}
+            onClick={() => onSelect(id)}
+            data-tour={`nav-${id}`}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-[10px] font-sans text-[11px] uppercase font-semibold tracking-wider transition-colors text-left ${
+              active === id ? 'bg-[#E6F0EB] text-[#245E4E]' : 'text-[#454A3E] hover:bg-[#F1F3EF]'
+            }`}
+          >
             <Icon className="w-4 h-4 shrink-0" />
             <span className="flex-grow">{label}</span>
             {!!badges[id] && (
-              <span className={`px-1.5 rounded-full text-[9px] font-bold ${active === id ? 'bg-white text-[#1A1A1A]' : 'bg-[#D14D2A] text-white'}`}>
+              <span
+                className={`px-1.5 rounded-full text-[9px] font-bold ${
+                  active === id ? 'bg-[#2F7A64] text-white' : 'bg-[#C2632F] text-white'
+                }`}
+              >
                 {badges[id]}
               </span>
             )}
@@ -75,12 +101,12 @@ export default function Sidebar({ active, onSelect, badges = {}, horizontal = fa
         ))}
       </div>
 
-      <div className="p-4 border-t border-[#1A1A1A]/10 space-y-1">
-        <p className="font-sans text-[9px] uppercase font-black tracking-widest opacity-40">Zero-friction starts.</p>
-        <p className="font-sans text-[9px] uppercase font-black tracking-widest opacity-40">Real deadlines met.</p>
+      <div className="p-4 border-t border-[#23271F]/10 space-y-1">
+        <p className="font-sans text-[9px] uppercase font-semibold tracking-wider opacity-40">One work state.</p>
+        <p className="font-sans text-[9px] uppercase font-semibold tracking-wider opacity-40">Every device in step.</p>
         <a
           href="/privacy"
-          className="block font-sans text-[9px] uppercase font-black tracking-widest opacity-40 hover:opacity-80 hover:text-[#2A6B5E] transition-opacity"
+          className="block font-sans text-[9px] uppercase font-semibold tracking-wider opacity-40 hover:opacity-80 hover:text-[#2F7A64] transition-opacity"
         >
           Privacy Policy
         </a>

@@ -8,34 +8,29 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    selector: '[data-tour="chat-toggle"]',
-    title: 'Start with Chat',
-    body: "Toggle this open anytime. Dump a deadline or half-finished task in here — AI turns it into a plan and starts the first step for you.",
+    selector: '[data-tour="capture"]',
+    title: 'Start here',
+    body: "Dump a deadline or half-finished task into this box — AI turns it into a plan and starts the first step for you. The conversation stays right on this screen.",
   },
   {
-    selector: '[data-tour="nav-plan"]',
-    title: 'Plan',
-    body: 'The Execution Panel here always shows the one thing to do right now, with a timer, plus your schedule and anything overdue.',
+    selector: '[data-tour="nav-today"]',
+    title: 'Today',
+    body: 'The console home: your one active task with a session clock and next step, a resume point, and the rest of the day.',
   },
   {
-    selector: '[data-tour="nav-board"]',
-    title: 'Tasks',
-    body: 'Every task lives on its own board here — zoomed out, full screen, separate from the day-to-day Plan view.',
+    selector: '[data-tour="nav-my-work"]',
+    title: 'My Work',
+    body: 'Every work item with its own progress and resume point. Start, focus, skip, or complete from here.',
   },
   {
     selector: '[data-tour="task-toolbar"]',
-    title: 'Add tasks',
+    title: 'Add work',
     body: "Add a task manually here, or hit \"Plan my day\" to auto time-block everything you've got.",
   },
   {
-    selector: '[data-tour="nav-goals"]',
-    title: 'Goals',
-    body: 'Set a goal and link tasks to it to track the bigger picture behind the busywork.',
-  },
-  {
-    selector: '[data-tour="nav-habits"]',
-    title: 'Habits',
-    body: 'Track daily or weekly streaks — weekly streaks forgive an off day as long as you hit your count for the week.',
+    selector: '[data-tour="nav-context"]',
+    title: 'Context',
+    body: 'The working set for the step you\'re on — next move, dependencies, and saved references, kept together for a clean resume.',
   },
   {
     selector: '[data-tour="nav-workflows"]',
@@ -142,26 +137,26 @@ export default function GuidedTour({ onDismiss, onStepChange }: Props) {
           }}
         />
       )}
-      <div className="fixed z-[61] bg-white border-2 border-[#1A1A1A] shadow-[6px_6px_0px_0px_#1A1A1A] p-5 space-y-3 font-sans"
+      <div className="fixed z-[61] bg-white border-2 border-[#23271F]/14 shadow-[0_16px_40px_-14px_rgba(35,39,31,0.24)] p-5 space-y-3 font-sans"
         style={tooltipStyle}>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-black italic font-serif">{STEPS[step].title}</h3>
+          <h3 className="text-lg font-semibold italic font-serif">{STEPS[step].title}</h3>
           <span className="text-[10px] uppercase font-bold opacity-40">{step + 1}/{STEPS.length}</span>
         </div>
         <p className="text-xs leading-relaxed opacity-80">{STEPS[step].body}</p>
         <div className="flex justify-between items-center gap-3 pt-1">
-          <button onClick={onDismiss} className="text-[10px] uppercase font-bold tracking-widest opacity-50 hover:opacity-100 transition-opacity">
+          <button onClick={onDismiss} className="text-[10px] uppercase font-bold tracking-wider opacity-50 hover:opacity-100 transition-opacity">
             Skip
           </button>
           <div className="flex gap-2">
             {step > 0 && (
               <button onClick={() => setStep((s) => s - 1)}
-                className="px-3 py-1.5 border border-[#1A1A1A] text-[10px] font-bold uppercase tracking-widest hover:bg-[#1A1A1A] hover:text-white transition-colors">
+                className="px-3 py-1.5 border border-[#23271F]/14 text-[10px] font-bold uppercase tracking-wider hover:bg-[#2C312A] hover:text-white transition-colors">
                 Back
               </button>
             )}
             <button onClick={() => (isLast ? onDismiss() : setStep((s) => s + 1))}
-              className="px-3 py-1.5 bg-[#1A1A1A] text-white text-[10px] font-bold uppercase tracking-widest hover:bg-[#333] transition-colors">
+              className="px-3 py-1.5 bg-[#2C312A] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-[#3A3F37] transition-colors">
               {isLast ? 'Done' : 'Next'}
             </button>
           </div>

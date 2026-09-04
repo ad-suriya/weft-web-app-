@@ -2,11 +2,13 @@ import {
   ChatResponse,
   ChatSession,
   DecompositionPlan,
+  FocusPrefs,
   FreeSlot,
   Goal,
   Habit,
   MemoryFact,
   RecoveryResult,
+  Reference,
   Reminder,
   RescheduleResult,
   ScheduleResult,
@@ -15,6 +17,7 @@ import {
   StatusInfo,
   SubtaskDraft,
   Task,
+  UserProfile,
   Urgency,
   Workflow,
   WorkflowPlan,
@@ -144,14 +147,22 @@ export const api = {
   // Focus sessions — same /api/sessions resource the extension popup polls,
   // so starting/ending one here shows up there too.
   listSessions: () => fetch('/api/sessions', { headers: authHeaders() }).then(handle<Session[]>),
-  startSession: (description = '', durationMinutes = 0) =>
+  startSession: (description = '', durationMinutes = 0, taskId?: number | null) =>
     fetch('/api/sessions', {
       method: 'POST',
       headers: jsonHeaders(),
-      body: JSON.stringify({ description, duration_minutes: durationMinutes }),
+      body: JSON.stringify({ description, duration_minutes: durationMinutes, task_id: taskId ?? null }),
     }).then(handle<Session>),
   patchSession: (id: number, body: Partial<Pick<Session, 'is_paused' | 'end_time' | 'duration_minutes'>>) =>
     fetch(`/api/sessions/${id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(body) }).then(handle<Session>),
+
+  // References — Context screen's saved-for-this-task working set.
+  listReferences: (taskId?: number) =>
+    fetch(`/api/references${taskId != null ? `?task_id=${taskId}` : ''}`, { headers: authHeaders() }).then(handle<Reference[]>),
+  createReference: (body: { title: string; url?: string; task_id?: number | null; snippet?: string }) =>
+    fetch('/api/references', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) }).then(handle<Reference>),
+  deleteReference: (id: number) =>
+    fetch(`/api/references/${id}`, { method: 'DELETE', headers: authHeaders() }).then(handle<{ deleted: number }>),
 
   // Google Calendar sync
   calendarStatus: () => fetch('/api/calendar/status', { headers: authHeaders() }).then(handle<{ connected: boolean }>),
@@ -181,14 +192,13 @@ export const api = {
     fetch('/api/tasks/decompose/commit', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ goal, subtasks }) }).then(handle<Task[]>),
 
   // Privacy — first-use notice/consent + data export & delete
-  getProfile: () =>
-    fetch('/api/me', { headers: authHeaders() }).then(
-      handle<{ id: string; name?: string; email?: string; consent_accepted_at?: string; consent_version?: string }>,
-    ),
+  getProfile: () => fetch('/api/me', { headers: authHeaders() }).then(handle<UserProfile>),
   acceptConsent: () =>
     fetch('/api/me/consent', { method: 'POST', headers: authHeaders() }).then(
       handle<{ consent_accepted_at: string; consent_version: string }>,
     ),
+  updateFocusPrefs: (patch: Partial<FocusPrefs>) =>
+    fetch('/api/me/focus', { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(patch) }).then(handle<FocusPrefs>),
   exportMyData: () => fetch('/api/me/data/export', { headers: authHeaders() }).then(handle<Record<string, unknown>>),
   deleteMyData: () =>
     fetch('/api/me/data', { method: 'DELETE', headers: authHeaders() }).then(handle<{ deleted: Record<string, number> }>),
