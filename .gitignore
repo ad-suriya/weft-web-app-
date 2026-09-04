@@ -25,6 +25,7 @@ tsconfig.tsbuildinfo
 **/*service-account*.json
 **/serviceAccount*.json
 **/*-firebase-adminsdk-*.json
+**/sa.json
 
 # etc
 .DS_Store
