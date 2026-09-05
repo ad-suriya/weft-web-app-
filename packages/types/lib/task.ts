@@ -7,6 +7,11 @@ export interface Task {
   description?: string;
   url?: string;
   selectedText?: string;
+  // Which workflow (and which of its steps) this task belongs to — the
+  // shared step-identity contract other WEFT clients resolve "current step"
+  // text through. Unset for tasks not created from/attached to a workflow.
+  workflowId?: string;
+  stepId?: string;
   priority: TaskPriority;
   tags: string[];
   status: TaskStatus;

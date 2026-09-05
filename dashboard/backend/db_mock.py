@@ -16,6 +16,7 @@ _data = {
     "workflows": {},
     "counters": {},
     "chats": {},
+    "references": {},
 }
 
 _next_ids = {
@@ -26,6 +27,7 @@ _next_ids = {
     "sessions": 1,
     "projects": 1,
     "workflows": 1,
+    "references": 1,
 }
 
 
@@ -65,7 +67,8 @@ def get_task(task_id: int, user_id: str) -> Optional[dict]:
 
 def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estimated_minutes=30,
                 deadline=None, next_micro_step="", goal_id=None, url=None,
-                selected_text=None, tags=None, dependencies=None, completed_minutes=0) -> dict:
+                selected_text=None, tags=None, dependencies=None, completed_minutes=0,
+                workflow_id=None, step_id=None) -> dict:
     task_id = _next_ids["tasks"]
     _next_ids["tasks"] += 1
     ts = now_iso()
@@ -82,6 +85,8 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
         "scheduled_start": None,
         "scheduled_end": None,
         "goal_id": goal_id,
+        "workflow_id": workflow_id,
+        "step_id": step_id,
         "url": url,
         "selected_text": selected_text,
         "tags": tags or [],
@@ -96,7 +101,7 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
 
 def update_task(task_id: int, user_id: str, **fields) -> Optional[dict]:
     allowed = {"task_name", "status", "urgency", "estimated_minutes", "completed_minutes", "deadline",
-               "next_micro_step", "scheduled_start", "scheduled_end", "goal_id",
+               "next_micro_step", "scheduled_start", "scheduled_end", "goal_id", "workflow_id", "step_id",
                "url", "selected_text", "tags", "calendar_event_id", "dependencies"}
     task = _data["tasks"].get(task_id)
     if not task or task["user_id"] != user_id:
@@ -335,7 +340,8 @@ def get_session(session_id: int, user_id: str) -> Optional[dict]:
     return dict(session) if session and session["user_id"] == user_id else None
 
 
-def create_session(user_id: str, description: str = "", project_id: Optional[int] = None, duration_minutes: int = 0) -> dict:
+def create_session(user_id: str, description: str = "", project_id: Optional[int] = None, duration_minutes: int = 0,
+                    task_id: Optional[int] = None, current_step_id: Optional[str] = None) -> dict:
     session_id = _next_ids["sessions"]
     _next_ids["sessions"] += 1
     ts = now_iso()
@@ -344,6 +350,8 @@ def create_session(user_id: str, description: str = "", project_id: Optional[int
         "user_id": user_id,
         "description": description,
         "project_id": project_id,
+        "task_id": task_id,
+        "current_step_id": current_step_id,
         "start_time": ts,
         "end_time": None,
         "duration_minutes": duration_minutes,
@@ -360,7 +368,8 @@ def create_session(user_id: str, description: str = "", project_id: Optional[int
 
 def update_session(session_id: int, user_id: str, **fields) -> Optional[dict]:
     allowed = {"description", "project_id", "end_time", "duration_minutes",
-               "is_paused", "breaks_taken", "total_break_minutes", "calendar_event_id"}
+               "is_paused", "breaks_taken", "total_break_minutes", "calendar_event_id",
+               "task_id", "current_step_id"}
     session = _data["sessions"].get(session_id)
     if not session or session["user_id"] != user_id:
         return None
@@ -375,6 +384,40 @@ def delete_session(session_id: int, user_id: str) -> bool:
     session = _data["sessions"].get(session_id)
     if session and session["user_id"] == user_id:
         del _data["sessions"][session_id]
+        return True
+    return False
+
+
+# --- References — mirrors db.py's (Context screen's "saved for this task"
+# working set: title, url, optional short user-selected snippet, task_id).
+def list_references(user_id: str, task_id: Optional[int] = None) -> list[dict]:
+    refs = [dict(r) for r in _data["references"].values() if r["user_id"] == user_id]
+    if task_id is not None:
+        refs = [r for r in refs if r.get("task_id") == task_id]
+    return sorted(refs, key=lambda r: r["id"], reverse=True)
+
+
+def create_reference(user_id: str, title: str, url: str = "", task_id: Optional[int] = None,
+                      snippet: str = "") -> dict:
+    ref_id = _next_ids["references"]
+    _next_ids["references"] += 1
+    ref = {
+        "id": ref_id,
+        "user_id": user_id,
+        "title": title,
+        "url": url,
+        "task_id": task_id,
+        "snippet": snippet,
+        "created_at": now_iso(),
+    }
+    _data["references"][ref_id] = ref
+    return ref
+
+
+def delete_reference(reference_id: int, user_id: str) -> bool:
+    ref = _data["references"].get(reference_id)
+    if ref and ref["user_id"] == user_id:
+        del _data["references"][reference_id]
         return True
     return False
 
@@ -540,7 +583,7 @@ def set_user_consent(user_id: str, version: str) -> dict:
 # Mirrors db.py: per-user collections wiped by delete_user_data (not `users`).
 _USER_COLLECTIONS = (
     "tasks", "workflows", "sessions", "goals", "habits", "habit_logs",
-    "reminders", "projects", "task_events", "chats",
+    "reminders", "projects", "task_events", "chats", "references",
 )
 
 

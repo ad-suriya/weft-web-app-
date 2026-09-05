@@ -7,13 +7,14 @@ autonomous rescheduling, and calendar (.ics) export.
 import secrets
 import time
 import urllib.parse
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 import auth
 import privacy
@@ -107,6 +108,11 @@ class TaskCreate(BaseModel):
     deadline: Optional[str] = None
     next_micro_step: str = ""
     goal_id: Optional[int] = None
+    # Which workflow (and which of its steps) this task came from/belongs to
+    # — the shared WorkSession/WorkContext contract's step-identity source.
+    # Unrelated to goal_id.
+    workflow_id: Optional[int] = None
+    step_id: Optional[str] = None
     url: Optional[str] = None
     selected_text: Optional[str] = None
     tags: List[str] = []
@@ -137,6 +143,8 @@ class TaskPatch(BaseModel):
     deadline: Optional[str] = None
     next_micro_step: Optional[str] = None
     goal_id: Optional[int] = None
+    workflow_id: Optional[int] = None
+    step_id: Optional[str] = None
     url: Optional[str] = None
     selected_text: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -218,6 +226,9 @@ class SessionCreate(BaseModel):
     project_id: Optional[int] = None
     duration_minutes: int = 0
     task_id: Optional[int] = None
+    # Which workflow step this session is currently working — the shared
+    # WorkSession.current_step_id contract Android/other clients also read.
+    current_step_id: Optional[str] = None
 
 
 class SessionPatch(BaseModel):
@@ -229,6 +240,7 @@ class SessionPatch(BaseModel):
     breaks_taken: Optional[int] = None
     total_break_minutes: Optional[int] = None
     task_id: Optional[int] = None
+    current_step_id: Optional[str] = None
 
 
 class FocusPrefsPatch(BaseModel):
@@ -242,6 +254,25 @@ class ReferenceCreate(BaseModel):
     url: str = ""
     task_id: Optional[int] = None
     snippet: str = ""
+
+    # References are the clearest page-derived data WEFT stores — same
+    # data-minimization chokepoint as TaskCreate's url/selected_text
+    # validators above (privacy.py docstring requires this for any future
+    # references model; this was the gap it warned about).
+    @field_validator("title")
+    @classmethod
+    def _v_title(cls, v):
+        return privacy.enforce_metadata_only(v, field="title", max_len=privacy.MAX_NOTE_LEN)
+
+    @field_validator("snippet")
+    @classmethod
+    def _v_snippet(cls, v):
+        return privacy.enforce_metadata_only(v, field="snippet", max_len=privacy.MAX_SNIPPET_LEN)
+
+    @field_validator("url")
+    @classmethod
+    def _v_url(cls, v):
+        return privacy.clean_url(v)
 
 
 class ProjectCreate(BaseModel):
@@ -259,6 +290,12 @@ class WorkflowGenerateRequest(BaseModel):
 
 
 class WorkflowStepIn(BaseModel):
+    # Stable id so a Task/Session can point at "this exact step" even after
+    # the workflow's step list is reordered/edited — steps used to be
+    # addressed only by array position, which broke the moment a step was
+    # inserted/removed. Client-supplied on edit (to keep an existing step's
+    # identity), auto-generated for a brand-new step.
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     task_name: str
     urgency: engine.Urgency = engine.Urgency.MEDIUM
     estimated_minutes: int = 30
@@ -424,7 +461,7 @@ def upsert_current_user(user: dict = Depends(get_current_user)) -> dict:
 # Current text of the data-use notice the user must accept on first use. Bump
 # this string whenever the notice materially changes so returning users are
 # re-prompted (frontend compares it against the stored consent_version).
-CONSENT_VERSION = "2026-09-03"
+CONSENT_VERSION = "2026-09-05"
 
 
 @app.post("/api/me/consent")
@@ -571,6 +608,8 @@ def add_task(body: TaskCreate, user: dict = Depends(get_current_user)) -> dict:
         deadline=body.deadline,
         next_micro_step=body.next_micro_step,
         goal_id=body.goal_id,
+        workflow_id=body.workflow_id,
+        step_id=body.step_id,
         url=body.url,
         selected_text=body.selected_text,
         tags=body.tags,
@@ -1057,7 +1096,8 @@ def add_session(body: SessionCreate, user: dict = Depends(get_current_user)) -> 
         if not s.get("end_time"):
             _close_session(s, user["id"], now)
     session = db.create_session(user["id"], description=body.description, project_id=body.project_id,
-                                 duration_minutes=body.duration_minutes, task_id=body.task_id)
+                                 duration_minutes=body.duration_minutes, task_id=body.task_id,
+                                 current_step_id=body.current_step_id)
 
     # Auto-add to Google Calendar immediately, sized to the planned duration —
     # corrected to the real end time once the session actually stops.
@@ -1197,7 +1237,8 @@ def run_workflow_now(workflow_id: int, user: dict = Depends(get_current_user)) -
         raise HTTPException(status_code=404, detail="Workflow not found.")
     created = [
         db.create_task(user["id"], task_name=step["task_name"], urgency=step.get("urgency", "MEDIUM"),
-                        estimated_minutes=step.get("estimated_minutes", 30), tags=step.get("tags", []))
+                        estimated_minutes=step.get("estimated_minutes", 30), tags=step.get("tags", []),
+                        workflow_id=workflow_id, step_id=step.get("id"))
         for step in workflow.get("steps", [])
     ]
     db.update_workflow(workflow_id, user["id"], last_run=datetime.now(timezone.utc).replace(microsecond=0).isoformat())

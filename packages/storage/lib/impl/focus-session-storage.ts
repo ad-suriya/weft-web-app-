@@ -81,6 +81,8 @@ export const focusSessionStorage = {
     projectName?: string;
     projectColor?: string;
     durationMinutes?: number;
+    associatedTaskId?: string;
+    currentStepId?: string;
   }): Promise<FocusSession> => {
     const created = await request<ApiSession>('/sessions', {
       method: 'POST',
@@ -88,6 +90,8 @@ export const focusSessionStorage = {
         description: input.description || '',
         project_id: input.projectId ? Number(input.projectId) : undefined,
         duration_minutes: input.durationMinutes ?? 25,
+        task_id: input.associatedTaskId ? Number(input.associatedTaskId) : undefined,
+        current_step_id: input.currentStepId,
       }),
     });
     return mapApiSession(created);

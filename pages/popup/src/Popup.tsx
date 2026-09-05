@@ -1,11 +1,30 @@
 import '@src/Popup.css';
 import { useEffect, useState } from 'react';
-import { useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
-import { exampleThemeStorage, authStorage, focusSessionStorage, tasksStorage, blockingStorage, blockedSitesStorage, consentStorage, CONSENT_VERSION, FRONTEND_URL, API_BASE } from '@extension/storage';
+import { useStorage, withErrorBoundary, withSuspense, scoreRelevance, type RelevanceResult } from '@extension/shared';
+import {
+  exampleThemeStorage,
+  authStorage,
+  focusSessionStorage,
+  tasksStorage,
+  blockingStorage,
+  blockedSitesStorage,
+  consentStorage,
+  referenceStorage,
+  workflowsStorage,
+  CONSENT_VERSION,
+  FRONTEND_URL,
+  API_BASE,
+} from '@extension/storage';
 import { cn, LoadingSpinner, TimeTracker } from '@extension/ui';
 import { Login } from './Login';
 import { ConsentNotice } from './ConsentNotice';
-import type { FocusSession, Task } from '@extension/types';
+import type { FocusSession, Task, WorkflowSummary } from '@extension/types';
+
+interface ActiveTabContext {
+  title: string;
+  url: string;
+  selectedText?: string;
+}
 
 function Popup() {
   const { isLight } = useStorage(exampleThemeStorage);
@@ -22,6 +41,11 @@ function Popup() {
   const [taskError, setTaskError] = useState<string | null>(null);
   const [newSite, setNewSite] = useState('');
   const [showBlocklist, setShowBlocklist] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTabContext | null>(null);
+  const [currentTask, setCurrentTask] = useState<Task | null>(null);
+  const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowSummary | undefined>(undefined);
+  const [savingReference, setSavingReference] = useState(false);
+  const [referenceSaved, setReferenceSaved] = useState(false);
 
   // authStorage is updated live by the background script when the dashboard
   // bridge relays a login. Once that lands, enrich the user with backend data.
@@ -118,6 +142,103 @@ function Popup() {
     return () => clearInterval(interval);
   }, [isAuthenticated]);
 
+  // "This Page" — the active tab's title/URL (+selection), via the same
+  // explicit QUERY_CONTEXT message task-capture already uses. Polled while
+  // the popup is open only; nothing here runs while the popup is closed.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let cancelled = false;
+    const queryActiveTab = async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) {
+          if (!cancelled) setActiveTab(null);
+          return;
+        }
+        const response = await chrome.tabs
+          .sendMessage(tab.id, { type: 'QUERY_CONTEXT', payload: { query: 'context' } })
+          .catch(() => null);
+        if (cancelled) return;
+        setActiveTab({
+          title: response?.title || tab.title || '',
+          url: response?.url || tab.url || '',
+          selectedText: response?.selectedText,
+        });
+      } catch {
+        if (!cancelled) setActiveTab(null);
+      }
+    };
+
+    queryActiveTab();
+    const interval = setInterval(queryActiveTab, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
+
+  // Resolve "Current Work": the active session's linked task, and — if that
+  // task came from a workflow — the workflow's step text for that task's
+  // step_id (falls back to the task's free-text next_micro_step/title).
+  useEffect(() => {
+    if (!isAuthenticated || !session?.associatedTaskId) {
+      setCurrentTask(null);
+      setCurrentWorkflow(undefined);
+      return;
+    }
+    let cancelled = false;
+    tasksStorage
+      .getTasks()
+      .then(all => {
+        if (cancelled) return;
+        const task = all.find(t => t.id === session.associatedTaskId) || null;
+        setCurrentTask(task);
+        if (task?.workflowId) {
+          workflowsStorage
+            .getWorkflow(task.workflowId)
+            .then(wf => !cancelled && setCurrentWorkflow(wf))
+            .catch(() => !cancelled && setCurrentWorkflow(undefined));
+        } else {
+          setCurrentWorkflow(undefined);
+        }
+      })
+      .catch(() => !cancelled && setCurrentTask(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, session?.associatedTaskId]);
+
+  const currentStepId = session?.currentStepId || currentTask?.stepId;
+  const currentStepText =
+    currentWorkflow?.steps.find(s => s.id === currentStepId)?.taskName || currentTask?.description || undefined;
+
+  const relevance: RelevanceResult | null =
+    currentTask && activeTab
+      ? scoreRelevance({ name: currentTask.title, stepText: currentStepText }, activeTab)
+      : null;
+
+  const handleSaveReference = async () => {
+    setSavingReference(true);
+    setReferenceSaved(false);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) return;
+      const response = await chrome.tabs.sendMessage(tab.id, { type: 'SAVE_REFERENCE' });
+      if (!response?.success) return;
+      await referenceStorage.addReference({
+        title: response.title || tab.title || 'Untitled',
+        url: response.url || tab.url,
+        taskId: currentTask?.id,
+      });
+      setReferenceSaved(true);
+    } catch (err) {
+      console.error('Failed to save reference:', err);
+    } finally {
+      setSavingReference(false);
+    }
+  };
+
   const handleAddTask = async () => {
     const title = newTaskTitle.trim();
     if (!title) return;
@@ -153,12 +274,26 @@ function Popup() {
   // marks it in-progress so the dashboard's Execution Panel picks it up too.
   const handleFocusTask = async (task: Task) => {
     try {
-      const newSession = await focusSessionStorage.startTracking({ description: task.title });
+      const newSession = await focusSessionStorage.startTracking({
+        description: task.title,
+        associatedTaskId: task.id,
+        currentStepId: task.stepId,
+      });
       setSession(newSession);
       setDescription(task.title);
       await blockingStorage.enable(blockedSites);
       await tasksStorage.update(task.id, { status: 'in-progress' });
       await refreshTasks();
+      // Session-scoped context-switch watch — see chrome-extension/src/background:
+      // only runs while a session with task context is active, stops on
+      // FOCUS_ENDED/PAUSED. Sent here (not derived in the background) because
+      // only the popup has the task's resolved step text.
+      chrome.runtime
+        .sendMessage({
+          type: 'FOCUS_STARTED',
+          payload: { ...newSession, taskName: task.title, stepText: task.description },
+        })
+        .catch(() => {});
     } catch (err) {
       console.error('Failed to start focus on task:', err);
     }
@@ -199,8 +334,11 @@ function Popup() {
     try {
       await focusSessionStorage.stopTracking();
       await blockingStorage.disable();
+      chrome.runtime.sendMessage({ type: 'FOCUS_ENDED', payload: {} }).catch(() => {});
       setSession(null);
       setDescription('');
+      setCurrentTask(null);
+      setCurrentWorkflow(undefined);
 
       const now = Date.now();
       const startOfDay = new Date(now);
@@ -260,6 +398,58 @@ function Popup() {
           <p className="font-serif font-black text-2xl">{formatMs(weekTotal)}</p>
         </div>
       </div>
+
+      {/* Current Work — the active session's linked task + resolved workflow
+          step text (falls back to next_micro_step for tasks with no
+          workflow). Nothing shown if no session is running or it isn't
+          pinned to a task. */}
+      {currentTask && (
+        <div className={cn('border p-3 flex flex-col gap-1', isLight ? 'border-ink/15 bg-[#F5F2ED]' : 'border-paper/20 bg-[#1a1a1a]')}>
+          <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">Current Work</p>
+          <p className="text-sm font-semibold truncate">{currentTask.title}</p>
+          {currentStepText && <p className="text-xs opacity-70 truncate">Step: {currentStepText}</p>}
+          {currentWorkflow && currentStepId && (
+            <p className="text-[10px] opacity-50">
+              {currentWorkflow.steps.findIndex(s => s.id === currentStepId) + 1} / {currentWorkflow.steps.length} steps
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* This Page — the active tab's title + a relevance badge against
+          Current Work, and an explicit Save Reference action. Page context
+          here is read only while the popup is open (chrome.tabs.query on a
+          poll), never scanned in the background. */}
+      {activeTab && (
+        <div className={cn('border p-3 flex flex-col gap-2', isLight ? 'border-ink/15' : 'border-paper/20')}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">This Page</p>
+            {relevance && relevance.verdict !== 'unknown' && (
+              <span
+                className={cn(
+                  'text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 border',
+                  relevance.verdict === 'relevant'
+                    ? 'border-planning text-planning'
+                    : 'border-panic text-panic',
+                )}
+              >
+                {relevance.verdict === 'relevant' ? '● Relevant' : '⚠ Context switch'}
+              </span>
+            )}
+          </div>
+          <p className="text-sm truncate" title={activeTab.title}>{activeTab.title || activeTab.url}</p>
+          <button
+            onClick={handleSaveReference}
+            disabled={savingReference}
+            className={cn(
+              'self-start px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold border transition-colors disabled:opacity-50',
+              isLight ? 'border-ink hover:bg-ink hover:text-paper' : 'border-paper hover:bg-paper hover:text-ink',
+            )}
+          >
+            {savingReference ? 'Saving…' : referenceSaved ? 'Saved ✓' : 'Save Reference'}
+          </button>
+        </div>
+      )}
 
       {/* Task-capture site lock — distinct from the blocklist below: instead
           of blocking a few distracting sites, ONLY this one is reachable. */}

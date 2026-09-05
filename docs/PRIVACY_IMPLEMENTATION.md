@@ -25,20 +25,33 @@ are recorded here as placeholders.
 - `dashboard/backend/privacy.py`: `enforce_metadata_only()` rejects raw page
   HTML / full page text / over-long blobs; `clean_url()` validates URLs.
 - Wired into `TaskCreate` / `TaskPatch` validators for `selected_text`,
-  `next_micro_step`, `url` — the only task fields that carry page-derived
-  data (this app has no separate `Reference` / `WorkState` table yet).
-- **Any future `references` / `work_state` model MUST route create/update
-  through `privacy.enforce_metadata_only`.**
+  `next_micro_step`, `url`, **and now `ReferenceCreate`'s `title`/`url`/
+  `snippet`** — a real `references` model exists (`dashboard/backend/main.py`
+  `/api/references`, `db.py` `create_reference`) and previously skipped this
+  chokepoint; closed as part of wiring the extension's Save Reference button.
+- **Any future page-derived-data model MUST route create/update through
+  `privacy.enforce_metadata_only`.**
 
-## 4. Browser extension: explicit-only capture — done
-- Audit result: it already never enumerated tabs or history and never
-  auto-sent anything.
-- `pages/content/src/context-capture.ts` rewritten: `capturePageMetadata()`
-  returns title + URL only; `SAVE_REFERENCE` message returns metadata only;
-  selection is only read for an explicit task-capture gesture. Policy stated
-  at the top of the file.
-- `chrome-extension/manifest.ts`: dropped unused `scripting` + `notifications`
-  permissions; per-permission justification comment added.
+## 4. Browser extension: explicit-only capture, mostly — updated
+- `pages/content/src/context-capture.ts`: `capturePageMetadata()` returns
+  title + URL only; `SAVE_REFERENCE` message returns metadata only;
+  selection is only read for an explicit task-capture gesture.
+- **New, disclosed exception**: while a focus session with a linked task is
+  running, `chrome-extension/src/background/index.ts` polls the active tab's
+  title/URL (via `chrome.alarms`, never `chrome.scripting`/page content)
+  every minute to detect drift from the current task, and fires one
+  `chrome.notifications` nudge after 10 continuous minutes of low relevance.
+  This is session-scoped — starts on `FOCUS_STARTED` (only if the session
+  carries task context), stops on `FOCUS_ENDED`/`FOCUS_PAUSED` — and nothing
+  it reads is ever sent to the backend; relevance scoring
+  (`packages/shared/lib/utils/relevance.ts`) runs entirely on-device.
+  Disclosed in `pages/popup/src/ConsentNotice.tsx`, which gated re-prompting
+  everyone via a `CONSENT_VERSION` bump (`main.py` + `consent-storage.ts`,
+  both now `2026-09-05`).
+- `chrome-extension/manifest.ts`: added `notifications` (the drift nudge) and
+  `alarms` (MV3 service workers don't survive `setTimeout` between events) —
+  both justified in the permissions comment block. `scripting` remains
+  deliberately unrequested — no page-content access anywhere.
 
 ## 5. Android permissions: keep minimal — placeholder
 - No Android code in this repo. Recorded intent:

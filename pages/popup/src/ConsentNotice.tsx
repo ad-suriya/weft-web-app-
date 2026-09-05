@@ -20,15 +20,22 @@ export const ConsentNotice = ({ isLight, onAccept }: Props) => (
       This extension reads the <strong>title and URL of your current tab only</strong>, and sends it to WEFT only when
       you save a reference or capture a task.
     </p>
+    <p className="leading-relaxed">
+      <strong>While a focus session is running on a task,</strong> it also checks your active tab's title/URL against
+      that task to notice when you've drifted — this check happens on your device only, is never sent anywhere, and
+      stops the moment your session ends or pauses.
+    </p>
     <ul className="space-y-1">
-      {['No background scanning of your tabs', 'No browsing history', 'No page content unless you select and save it'].map(
-        x => (
-          <li key={x} className="flex gap-2">
-            <span className="font-bold text-planning">✓</span>
-            <span>{x}</span>
-          </li>
-        ),
-      )}
+      {[
+        'No background scanning outside an active focus session',
+        'No browsing history',
+        'No page content unless you select and save it',
+      ].map(x => (
+        <li key={x} className="flex gap-2">
+          <span className="font-bold text-planning">✓</span>
+          <span>{x}</span>
+        </li>
+      ))}
     </ul>
     <a
       href={`${FRONTEND_URL}/privacy`}

@@ -7,6 +7,9 @@ export interface FocusSession {
   durationMinutes: number;
   mode: FocusMode;
   associatedTaskId?: string;
+  // Which of the associated task's workflow steps is "current" for this
+  // session — the shared WorkSession.current_step_id contract.
+  currentStepId?: string;
   isActive: boolean;
   blockedSites: string[];
   breaksTaken: number;
@@ -34,6 +37,7 @@ export interface FocusSessionCreateInput {
   durationMinutes: number;
   mode: FocusMode;
   associatedTaskId?: string;
+  currentStepId?: string;
   blockedSites?: string[];
 }
 

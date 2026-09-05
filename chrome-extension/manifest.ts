@@ -35,12 +35,18 @@ const manifest = {
   // login from the deployed dashboard origin. No page content is read or sent.
   host_permissions: ['<all_urls>'],
   // Kept minimal (Chrome Web Store disclosure):
-  //   storage      — the user's tasks, focus sessions, blocklist, auth + consent, all local
-  //   tabs         — read the ACTIVE tab's title + URL for explicit "Save Reference" / task capture
-  //   contextMenus — the "Add to WEFT" right-click entry
-  // Deliberately NOT requested: `notifications` and `scripting` (unused), and
+  //   storage       — the user's tasks, focus sessions, blocklist, auth + consent, all local
+  //   tabs          — read the ACTIVE tab's title + URL for explicit "Save Reference" / task
+  //                   capture, and — ONLY while a focus session with a linked task is running —
+  //                   the same title+URL (never content) for the context-switch check below
+  //   contextMenus  — the "Add to WEFT" right-click entry
+  //   notifications — the single "you've drifted" nudge fired by the context-switch check;
+  //                   disclosed in the first-use consent notice, session-scoped (see background)
+  //   alarms        — MV3 service workers get killed between events, so the context-switch
+  //                   check's multi-minute threshold timer needs chrome.alarms, not setTimeout
+  // Deliberately NOT requested: `scripting` (unused) — no page-content access anywhere, and
   // no notification-listener / Do-Not-Disturb access anywhere.
-  permissions: ['storage', 'tabs', 'contextMenus'],
+  permissions: ['storage', 'tabs', 'contextMenus', 'notifications', 'alarms'],
   background: {
     service_worker: 'background.js',
     type: 'module',

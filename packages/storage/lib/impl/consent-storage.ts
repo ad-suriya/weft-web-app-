@@ -3,7 +3,7 @@ import { createStorage, StorageEnum } from '../base/index.js';
 // One-time data-use notice for the extension. Mirrors the dashboard's
 // first-use consent and the (future) Android app's — the extension keeps its
 // own local record since it can run before the dashboard has ever been opened.
-export const CONSENT_VERSION = '2026-09-03';
+export const CONSENT_VERSION = '2026-09-05';
 
 interface ConsentState {
   acceptedVersion: string | null;

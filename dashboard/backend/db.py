@@ -135,7 +135,8 @@ def get_task(task_id: int, user_id: str) -> Optional[dict]:
 
 def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estimated_minutes=30,
                 deadline=None, next_micro_step="", goal_id=None, url=None,
-                selected_text=None, tags=None, dependencies=None, completed_minutes=0) -> dict:
+                selected_text=None, tags=None, dependencies=None, completed_minutes=0,
+                workflow_id=None, step_id=None) -> dict:
     ts = now_iso()
     return _save("tasks", {
         "id": _next_id("tasks"),
@@ -152,6 +153,11 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
         "scheduled_start": None,
         "scheduled_end": None,
         "goal_id": goal_id,
+        # Which workflow/step this task came from — the shared step-identity
+        # contract other clients (extension, Android) resolve "current step"
+        # text through. Unrelated to goal_id.
+        "workflow_id": workflow_id,
+        "step_id": step_id,
         "url": url,
         "selected_text": selected_text,
         "tags": tags or [],
@@ -167,7 +173,7 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
 
 def update_task(task_id: int, user_id: str, **fields) -> Optional[dict]:
     allowed = {"task_name", "status", "urgency", "estimated_minutes", "completed_minutes", "deadline",
-               "next_micro_step", "scheduled_start", "scheduled_end", "goal_id",
+               "next_micro_step", "scheduled_start", "scheduled_end", "goal_id", "workflow_id", "step_id",
                "url", "selected_text", "tags", "calendar_event_id", "dependencies"}
     sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not sets:
@@ -363,7 +369,8 @@ def get_session(session_id: int, user_id: str) -> Optional[dict]:
 
 
 def create_session(user_id: str, description: str = "", project_id: Optional[int] = None,
-                    duration_minutes: int = 0, task_id: Optional[int] = None) -> dict:
+                    duration_minutes: int = 0, task_id: Optional[int] = None,
+                    current_step_id: Optional[str] = None) -> dict:
     ts = now_iso()
     return _save("sessions", {
         "id": _next_id("sessions"),
@@ -375,6 +382,10 @@ def create_session(user_id: str, description: str = "", project_id: Optional[int
         # credit_task_time) and lets the UI resume the exact task a past
         # session belonged to, instead of just showing its free-text label.
         "task_id": task_id,
+        # Which of that task's workflow steps is "current" for this session
+        # — the shared WorkSession.current_step_id contract other clients
+        # (extension relevance check, Android) read.
+        "current_step_id": current_step_id,
         "start_time": ts,
         "end_time": None,
         "duration_minutes": duration_minutes,
@@ -389,7 +400,8 @@ def create_session(user_id: str, description: str = "", project_id: Optional[int
 
 def update_session(session_id: int, user_id: str, **fields) -> Optional[dict]:
     allowed = {"description", "project_id", "end_time", "duration_minutes",
-               "is_paused", "breaks_taken", "total_break_minutes", "calendar_event_id", "task_id"}
+               "is_paused", "breaks_taken", "total_break_minutes", "calendar_event_id", "task_id",
+               "current_step_id"}
     sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not sets:
         return get_session(session_id, user_id)

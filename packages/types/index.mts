@@ -52,3 +52,7 @@ export type {
   Schedule,
   BlockSchedule,
 } from './lib/schedule.js';
+
+export type { Reference, ReferenceCreateInput } from './lib/reference.js';
+
+export type { WorkflowStepSummary, WorkflowSummary } from './lib/workflow.js';

@@ -23,7 +23,10 @@ export type MessageType =
   | 'SETTINGS_UPDATED'
   | 'CONTENT_CAPTURED'
   | 'QUERY_CONTEXT'
-  | 'CONTEXT_RESPONSE';
+  | 'CONTEXT_RESPONSE'
+  | 'SAVE_REFERENCE'
+  | 'AUTH_CHANGED'
+  | 'QUERY_DASHBOARD_AUTH';
 
 export interface BaseMessage {
   type: MessageType;
@@ -95,6 +98,40 @@ export interface ContextResponseMessage extends BaseMessage {
   };
 }
 
+// Sent to the content script (see pages/content/src/context-capture.ts) to
+// request the current tab's title+URL for an explicit "Save Reference"
+// action. The content script answers directly via sendResponse (metadata
+// only, never selection/page content) — there is no separate response type.
+export interface SaveReferenceMessage extends BaseMessage {
+  type: 'SAVE_REFERENCE';
+  payload?: Record<string, never>;
+}
+
+// The dashboard tab (see dashboard/frontend/src/App.tsx) -> its own
+// dashboard-bridge content script -> the background script, whenever the
+// dashboard's own auth state changes (login, logout) or on every dashboard
+// page mount (a re-broadcast so a content script that attached after the
+// user already had a session still hears about it once this tab reloads).
+export interface AuthChangedMessage extends BaseMessage {
+  type: 'AUTH_CHANGED';
+  payload: {
+    isAuthenticated: boolean;
+    user: { id: string; email: string; name: string; picture?: string } | null;
+    accessToken: string;
+    refreshToken: string;
+  };
+}
+
+// Sent directly to a dashboard tab (pages/content/src/dashboard-bridge.ts) to
+// ask "what does this tab's own auth state say right now" and get a
+// synchronous answer back via sendResponse — the active counterpart to the
+// passive AUTH_CHANGED broadcast, used by the popup's "Already Logged In?"
+// check instead of waiting for a broadcast that may never come.
+export interface QueryDashboardAuthMessage extends BaseMessage {
+  type: 'QUERY_DASHBOARD_AUTH';
+  payload?: Record<string, never>;
+}
+
 export type ExtensionMessage =
   | TaskMessage
   | FocusMessage
@@ -103,7 +140,10 @@ export type ExtensionMessage =
   | SettingsMessage
   | ContentCaptureMessage
   | QueryContextMessage
-  | ContextResponseMessage;
+  | ContextResponseMessage
+  | SaveReferenceMessage
+  | AuthChangedMessage
+  | QueryDashboardAuthMessage;
 
 export interface MessageResponse<T = unknown> {
   success: boolean;

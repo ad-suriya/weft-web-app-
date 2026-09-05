@@ -59,6 +59,8 @@ export interface ApiSession {
   id: number;
   description: string;
   project_id: number | null;
+  task_id: number | null;
+  current_step_id: string | null;
   start_time: string;
   end_time: string | null;
   duration_minutes: number;
@@ -84,6 +86,8 @@ export function mapApiSession(s: ApiSession) {
     syncedToMobile: true,
     description: s.description || undefined,
     projectId: s.project_id != null ? String(s.project_id) : undefined,
+    associatedTaskId: s.task_id != null ? String(s.task_id) : undefined,
+    currentStepId: s.current_step_id || undefined,
   };
 }
 
@@ -97,6 +101,8 @@ export interface ApiTask {
   estimated_minutes: number;
   deadline: string | null;
   next_micro_step: string;
+  workflow_id: number | null;
+  step_id: string | null;
   url: string | null;
   selected_text: string | null;
   tags: string[];
@@ -129,6 +135,8 @@ export function mapApiTask(t: ApiTask) {
     description: t.next_micro_step || undefined,
     url: t.url || undefined,
     selectedText: t.selected_text || undefined,
+    workflowId: t.workflow_id != null ? String(t.workflow_id) : undefined,
+    stepId: t.step_id || undefined,
     priority: URGENCY_TO_EXT[t.urgency],
     tags: t.tags || [],
     status: STATUS_TO_EXT[t.status],
@@ -146,6 +154,8 @@ export function mapExtTaskToApiCreate(task: {
   description?: string;
   url?: string;
   selectedText?: string;
+  workflowId?: string;
+  stepId?: string;
   priority: 'low' | 'medium' | 'high';
   tags: string[];
   dueDate?: number;
@@ -157,6 +167,8 @@ export function mapExtTaskToApiCreate(task: {
     estimated_minutes: task.estimatedMinutes ?? 30,
     deadline: task.dueDate ? new Date(task.dueDate).toISOString() : null,
     next_micro_step: task.description || '',
+    workflow_id: task.workflowId ? Number(task.workflowId) : null,
+    step_id: task.stepId ?? null,
     url: task.url,
     selected_text: task.selectedText,
     tags: task.tags || [],
@@ -168,6 +180,8 @@ export function mapExtTaskUpdatesToApiPatch(updates: {
   description?: string;
   url?: string;
   selectedText?: string;
+  workflowId?: string;
+  stepId?: string;
   priority?: 'low' | 'medium' | 'high';
   tags?: string[];
   status?: 'inbox' | 'todo' | 'in-progress' | 'done' | 'archived';
@@ -179,10 +193,56 @@ export function mapExtTaskUpdatesToApiPatch(updates: {
   if (updates.description !== undefined) patch.next_micro_step = updates.description;
   if (updates.url !== undefined) patch.url = updates.url;
   if (updates.selectedText !== undefined) patch.selected_text = updates.selectedText;
+  if (updates.workflowId !== undefined) patch.workflow_id = updates.workflowId ? Number(updates.workflowId) : null;
+  if (updates.stepId !== undefined) patch.step_id = updates.stepId;
   if (updates.priority !== undefined) patch.urgency = PRIORITY_TO_API[updates.priority];
   if (updates.tags !== undefined) patch.tags = updates.tags;
   if (updates.status !== undefined) patch.status = STATUS_TO_API[updates.status];
   if (updates.dueDate !== undefined) patch.deadline = new Date(updates.dueDate).toISOString();
   if (updates.estimatedMinutes !== undefined) patch.estimated_minutes = updates.estimatedMinutes;
   return patch;
+}
+
+// --- References ---------------------------------------------------------------
+
+export interface ApiReference {
+  id: number;
+  title: string;
+  url: string;
+  task_id: number | null;
+  snippet: string;
+  created_at: string;
+}
+
+export function mapApiReference(r: ApiReference) {
+  return {
+    id: String(r.id),
+    title: r.title,
+    url: r.url || undefined,
+    taskId: r.task_id != null ? String(r.task_id) : undefined,
+    snippet: r.snippet || undefined,
+    createdAt: Date.parse(r.created_at),
+  };
+}
+
+// --- Workflows (read-only projection, for resolving "current step" text) ----
+
+export interface ApiWorkflowStep {
+  id: string;
+  task_name: string;
+  estimated_minutes: number;
+}
+
+export interface ApiWorkflow {
+  id: number;
+  name: string;
+  steps: ApiWorkflowStep[];
+}
+
+export function mapApiWorkflow(w: ApiWorkflow) {
+  return {
+    id: String(w.id),
+    name: w.name,
+    steps: w.steps.map(s => ({ id: s.id, taskName: s.task_name, estimatedMinutes: s.estimated_minutes })),
+  };
 }
