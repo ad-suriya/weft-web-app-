@@ -7,6 +7,7 @@ import {
   MonitorSmartphone,
   Activity,
   Settings2,
+  LogOut,
   LucideIcon,
 } from 'lucide-react';
 
@@ -36,9 +37,12 @@ interface Props {
   // Rendered as a horizontal strip on small screens instead of a sidebar —
   // every section stays one tap away regardless of viewport.
   horizontal?: boolean;
+  // Optional so existing callers that don't pass it don't break — but both
+  // App.tsx render sites now do, so this always shows in practice.
+  onLogout?: () => void;
 }
 
-export default function Sidebar({ active, onSelect, badges = {}, horizontal = false }: Props) {
+export default function Sidebar({ active, onSelect, badges = {}, horizontal = false, onLogout }: Props) {
   if (horizontal) {
     return (
       <nav className="relative z-50 flex lg:hidden border-b border-[#23271F]/14 bg-white overflow-x-auto">
@@ -58,6 +62,16 @@ export default function Sidebar({ active, onSelect, badges = {}, horizontal = fa
             )}
           </button>
         ))}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            title="Sign out"
+            aria-label="Sign out"
+            className="flex items-center gap-1.5 px-4 py-3 font-sans text-[10px] uppercase font-semibold tracking-wider whitespace-nowrap shrink-0 opacity-70 hover:opacity-100 hover:text-[#C2632F] ml-auto"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        )}
       </nav>
     );
   }
@@ -110,6 +124,15 @@ export default function Sidebar({ active, onSelect, badges = {}, horizontal = fa
         >
           Privacy Policy
         </a>
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1.5 font-sans text-[9px] uppercase font-semibold tracking-wider opacity-40 hover:opacity-80 hover:text-[#C2632F] transition-opacity pt-1"
+          >
+            <LogOut className="w-3 h-3" />
+            Sign out
+          </button>
+        )}
       </div>
     </nav>
   );

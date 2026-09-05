@@ -893,10 +893,10 @@ export default function App() {
         />
       )}
       {showExtensionPrompt && <ExtensionPrompt onDismiss={dismissExtensionPrompt} />}
-      <Sidebar active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} />
+      <Sidebar active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} onLogout={handleLogout} />
 
       <div className="flex-grow flex flex-col min-w-0 h-full">
-        <Sidebar horizontal active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} />
+        <Sidebar horizontal active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} onLogout={handleLogout} />
 
         {/* Top bar */}
         <header className="relative z-50 flex flex-col md:flex-row justify-between md:items-center border-b border-[#23271F]/14 bg-white px-4 md:px-6 py-3 gap-3">

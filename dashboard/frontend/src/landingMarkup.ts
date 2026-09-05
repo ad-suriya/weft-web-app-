@@ -24,8 +24,7 @@ export const LANDING_HTML = `
       <a href="#sync">Product</a>
       <a href="#how">How It Works</a>
       <a href="#proof">Use Cases</a>
-      <a href="#features">Pricing</a>
-      <a href="#features">About</a>
+      <a href="#features">Features</a>
     </div>
     <div class="nav__cta">
       <a class="btn btn--primary" href="${SIGNIN}">Get Started</a>
