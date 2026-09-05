@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { cn, LoadingSpinner } from '@extension/ui';
+import { AnimatePresence, motion } from 'motion/react';
+import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { cn, useReducedMotion } from '@extension/ui';
 import { FRONTEND_URL, API_BASE } from '@extension/storage';
 
 interface LoginProps {
@@ -57,6 +59,7 @@ export const Login: React.FC<LoginProps> = ({ isLight, onLoginSuccess: _onLoginS
   const [status, setStatus] = useState<Status>('idle');
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
   const [waitingForDashboardLogin, setWaitingForDashboardLogin] = useState(false);
+  const reduced = useReducedMotion();
 
   const checkDashboardSession = async () => {
     setStatus('checking');
@@ -117,6 +120,7 @@ export const Login: React.FC<LoginProps> = ({ isLight, onLoginSuccess: _onLoginS
   };
 
   const isChecking = status === 'checking';
+  const revealTransition = { duration: reduced ? 0 : 0.22 };
 
   return (
     <div
@@ -132,70 +136,92 @@ export const Login: React.FC<LoginProps> = ({ isLight, onLoginSuccess: _onLoginS
         </div>
 
         <div className="space-y-3">
-          <button
+          <motion.button
             onClick={handleOpenDashboard}
             disabled={isChecking}
+            whileTap={reduced || isChecking ? undefined : { scale: 0.98 }}
             className={cn(
-              'w-full py-3 px-4 font-semibold transition-all border disabled:opacity-50',
-              isLight
-                ? 'bg-ink text-paper border-ink shadow-[4px_4px_0px_0px_#D14D2A] hover:bg-[#333]'
-                : 'bg-paper text-ink border-paper shadow-[4px_4px_0px_0px_#D14D2A] hover:bg-gray-200',
+              'w-full py-3 px-4 rounded-md font-semibold transition-colors shadow-card disabled:opacity-50',
+              isLight ? 'bg-ink text-paper hover:bg-[#333]' : 'bg-paper text-ink hover:bg-gray-200',
             )}
           >
             Login with Google
-          </button>
+          </motion.button>
 
-          <button
+          <motion.button
             onClick={checkDashboardSession}
             disabled={isChecking}
+            whileTap={reduced || isChecking ? undefined : { scale: 0.98 }}
             className={cn(
-              'w-full py-3 px-4 font-semibold transition-all text-sm border disabled:opacity-50',
+              'w-full py-3 px-4 rounded-md font-semibold text-sm border transition-colors disabled:opacity-50 flex items-center justify-center gap-2',
               isLight ? 'border-ink hover:bg-ink hover:text-paper' : 'border-paper hover:bg-paper hover:text-ink',
             )}
           >
-            {waitingForDashboardLogin ? "I've signed in — Check Again" : 'Already Logged In? Click Here'}
-          </button>
+            {isChecking && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {isChecking ? 'Checking your session…' : waitingForDashboardLogin ? "I've signed in — Check Again" : 'Already Logged In? Click Here'}
+          </motion.button>
 
-          {(isLoading || isChecking) && (
-            <div className="flex flex-col items-center gap-2">
-              <LoadingSpinner />
-              <p className="text-xs opacity-60">Checking your Task Weave session…</p>
+          {isLoading && (
+            <div className="flex flex-col items-center gap-2 pt-2">
+              <Loader2 className="w-5 h-5 animate-spin opacity-60" />
             </div>
           )}
 
-          {status === 'success' && verifiedEmail && (
-            <p className="text-center text-xs font-semibold text-planning">You're signed in as {verifiedEmail}</p>
-          )}
-
-          {status === 'not-authenticated' && (
-            <div className="text-center space-y-2 border-t pt-3 border-current/10">
-              <p className="text-xs">You're not signed into Task Weave yet.</p>
-              <button
-                onClick={handleOpenDashboard}
-                className={cn(
-                  'text-xs font-bold uppercase tracking-widest underline',
-                  isLight ? 'text-planning' : 'text-planning',
-                )}
+          <AnimatePresence mode="wait">
+            {status === 'success' && verifiedEmail && (
+              <motion.div
+                key="success"
+                initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={revealTransition}
+                className="text-center flex items-center justify-center gap-1.5"
               >
-                Open Task Weave Dashboard
-              </button>
-            </div>
-          )}
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 24 }}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-planning" />
+                </motion.span>
+                <p className="text-xs font-semibold text-planning">You're signed in as {verifiedEmail}</p>
+              </motion.div>
+            )}
 
-          {status === 'error' && (
-            <div className="text-center space-y-2 border-t pt-3 border-current/10">
-              <p className="text-xs text-panic">Couldn't verify your session.</p>
-              <button
-                onClick={checkDashboardSession}
-                className={cn(
-                  'text-xs font-bold uppercase tracking-widest underline',
-                  isLight ? 'text-planning' : 'text-planning',
-                )}
+            {status === 'not-authenticated' && (
+              <motion.div
+                key="not-authenticated"
+                initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={revealTransition}
+                className="text-center space-y-2 border-t pt-3 border-current/10"
               >
-                Try Again
-              </button>
-            </div>
-          )}
+                <p className="text-xs">You're not signed into Task Weave yet.</p>
+                <button onClick={handleOpenDashboard} className="text-xs font-bold uppercase tracking-widest underline text-planning">
+                  Open Task Weave Dashboard
+                </button>
+              </motion.div>
+            )}
+
+            {status === 'error' && (
+              <motion.div
+                key="error"
+                initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
+                animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0, x: [0, -4, 4, -4, 0] }}
+                exit={{ opacity: 0 }}
+                transition={{ ...revealTransition, x: { duration: 0.3 } }}
+                className="text-center space-y-2 border-t pt-3 border-current/10"
+              >
+                <p className="text-xs text-panic flex items-center justify-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5" /> Couldn't verify your session.
+                </p>
+                <button onClick={checkDashboardSession} className="text-xs font-bold uppercase tracking-widest underline text-planning">
+                  Try Again
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className="text-center text-xs opacity-60 space-y-1">

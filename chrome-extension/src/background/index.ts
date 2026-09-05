@@ -1,5 +1,5 @@
 import 'webextension-polyfill';
-import { exampleThemeStorage, authStorage, focusSessionStorage } from '@extension/storage';
+import { exampleThemeStorage, authStorage, focusSessionStorage, blockingStorage } from '@extension/storage';
 import { scoreRelevance } from '@extension/shared';
 
 exampleThemeStorage.get().then(theme => {
@@ -126,8 +126,43 @@ async function checkContextSwitch(): Promise<void> {
   }
 }
 
+// --- Blocking/session reconciliation -----------------------------------------
+// blockingStorage (chrome.storage.local — enable/lockToSite/disable) and the
+// focus session it's meant to last exactly as long as (focusSessionStorage,
+// backed by the SAME backend /sessions the dashboard's own Start/Complete
+// buttons write to) are two separate stores. `disable()` was previously only
+// ever called from the popup's own Stop button — so ending the session any
+// other way (finishing/completing the task from the DASHBOARD, the popup
+// simply not being open when it ended, a duration running out) left
+// blockedSites/allowedSite active with no session left to ever turn it off,
+// silently blocking youtube.com/instagram.com/etc. forever. This alarm is the
+// backstop that catches that regardless of whether the popup is open: it runs
+// independent of any popup UI and is the source of truth reconciliation.
+const BLOCKING_RECONCILE_ALARM = 'weft-blocking-reconcile';
+const BLOCKING_RECONCILE_PERIOD_MINUTES = 1;
+
+async function reconcileBlocking(): Promise<void> {
+  const blocking = await blockingStorage.get();
+  if (!blocking.isActive) return;
+  try {
+    const current = await focusSessionStorage.getCurrent();
+    if (!current) await blockingStorage.disable();
+  } catch (err) {
+    // Network/auth hiccup — fail safe by leaving blocking exactly as it was
+    // rather than risk unblocking distracting sites mid-session on a false
+    // "no session" read. The next minute's check tries again.
+    console.error('[Background] Blocking reconcile check failed:', err);
+  }
+}
+
+// Runs every time the service worker wakes (install, browser start, or after
+// MV3 idles it out) — chrome.alarms.create with the same name just resets the
+// existing schedule, so this is safe to call unconditionally here.
+chrome.alarms.create(BLOCKING_RECONCILE_ALARM, { periodInMinutes: BLOCKING_RECONCILE_PERIOD_MINUTES });
+
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === CONTEXT_CHECK_ALARM) checkContextSwitch();
+  if (alarm.name === BLOCKING_RECONCILE_ALARM) reconcileBlocking();
 });
 
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {

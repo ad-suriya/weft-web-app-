@@ -36,6 +36,8 @@ import DevicesScreen from './screens/DevicesScreen';
 import ActivityScreen from './screens/ActivityScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import { ConsentModal } from './ConsentModal';
+import { useReducedMotion } from './hooks/useReducedMotion';
+import { FADE_UP, FADE_UP_REDUCED, DURATION, EASE_STANDARD } from './lib/motion';
 
 const MODE_META: Record<Mode, { label: string; color: string; blurb: string }> = {
   PLANNING_MODE: { label: 'Planning', color: '#2F7A64', blurb: 'Deadline is days out — be strategic.' },
@@ -88,6 +90,7 @@ function gcalUrl(task: Task): string {
 }
 
 export default function App() {
+  const reducedMotion = useReducedMotion();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -861,7 +864,7 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#F1F3EF] text-[#23271F] flex items-center justify-center">
+      <div className="min-h-screen bg-background text-ink flex items-center justify-center">
         <div className="text-center space-y-4">
           <Loader2 className="w-8 h-8 animate-spin mx-auto" />
           <p>Loading...</p>
@@ -879,7 +882,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen bg-[#F1F3EF] text-[#23271F] font-serif flex overflow-hidden">
+    <div className="h-screen bg-background text-ink font-serif flex overflow-hidden">
       {consentAcceptedAt === null && <ConsentModal onAccept={acceptConsent} />}
       {showTutorial && (
         <GuidedTour
@@ -899,9 +902,9 @@ export default function App() {
         <Sidebar horizontal active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} onLogout={handleLogout} />
 
         {/* Top bar */}
-        <header className="relative z-50 flex flex-col md:flex-row justify-between md:items-center border-b border-[#23271F]/14 bg-white px-4 md:px-6 py-3 gap-3">
+        <header className="relative z-50 flex flex-col md:flex-row justify-between md:items-center border-b border-ink/14 bg-surface px-4 md:px-6 py-3 gap-3">
           <div className="flex items-center gap-2.5">
-            <span className="inline-flex items-center gap-2 font-sans text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full border border-[#23271F]/14 bg-white">
+            <span className="inline-flex items-center gap-2 font-sans text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full border border-ink/14 bg-surface">
               <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: modeMeta.color }} />
               {modeMeta.label} mode
             </span>
@@ -914,7 +917,7 @@ export default function App() {
             <button
               onClick={() => setTab('settings')}
               title="Settings"
-              className="w-8 h-8 rounded-full bg-[#2F7A64] text-white grid place-items-center font-sans text-[11px] font-bold"
+              className="w-8 h-8 rounded-full bg-accent text-inverse grid place-items-center font-sans text-[11px] font-bold hover:bg-accent-strong transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
             >
               {(authUser?.name || '?').split(' ').map((s: string) => s[0]).slice(0, 2).join('').toUpperCase()}
             </button>
@@ -936,8 +939,8 @@ export default function App() {
             <>
               <AnimatePresence>
                 {hasRisk && (
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                    className="bg-[#C2632F] text-white p-4 rounded-[14px] flex items-center justify-between gap-4 shadow-[0_12px_32px_-12px_rgba(35,39,31,0.22)]">
+                  <motion.div {...(reducedMotion ? FADE_UP_REDUCED : FADE_UP)} transition={{ duration: DURATION.base, ease: EASE_STANDARD }}
+                    className="bg-danger text-white p-4 rounded-[14px] flex items-center justify-between gap-4 shadow-[0_12px_32px_-12px_rgba(35,39,31,0.22)]">
                     <div className="flex items-center gap-3">
                       <AlertTriangle className="w-5 h-5 shrink-0" />
                       <div className="font-sans text-xs">
@@ -946,7 +949,7 @@ export default function App() {
                       </div>
                     </div>
                     <button onClick={rescheduleNow} disabled={busy !== ''}
-                      className="font-sans text-[11px] font-semibold uppercase tracking-wider px-4 py-2 rounded-[10px] bg-white text-[#C2632F] hover:bg-[#F1F3EF] transition-colors flex items-center gap-2 whitespace-nowrap">
+                      className="font-sans text-[11px] font-semibold uppercase tracking-wider px-4 py-2 rounded-[10px] bg-white text-danger hover:bg-background transition-colors flex items-center gap-2 whitespace-nowrap">
                       {busy === 'reschedule' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Replan now
                     </button>
                   </motion.div>
@@ -955,37 +958,37 @@ export default function App() {
 
               <AnimatePresence>
                 {(trigger === 'START_POMODORO' || pomoSessionId != null) && executionTask?.status !== 'IN_PROGRESS' && (
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                    className="bg-[#2C312A] text-white p-5 rounded-[16px] flex items-center justify-between gap-4 shadow-[0_14px_36px_-14px_rgba(35,39,31,0.4)]">
+                  <motion.div {...(reducedMotion ? FADE_UP_REDUCED : FADE_UP)} transition={{ duration: DURATION.base, ease: EASE_STANDARD }}
+                    className="bg-surface-elevated text-white p-5 rounded-[16px] flex items-center justify-between gap-4 shadow-[0_14px_36px_-14px_rgba(35,39,31,0.4)]">
                     <div className="flex items-center gap-4">
-                      <Timer className="w-6 h-6 text-[#C2632F]" />
+                      <Timer className="w-6 h-6 text-danger" />
                       <div>
                         <span className="font-sans text-[10px] uppercase tracking-wider font-semibold opacity-60">Focus Timer</span>
                         <p className="font-serif text-4xl font-semibold tabular-nums tracking-tight">{fmtTimer(pomoSeconds)}</p>
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={togglePomo} className="p-3 rounded-[10px] border border-white/40 hover:bg-white hover:text-[#23271F] transition-colors" aria-label={pomoRunning ? 'Pause' : 'Play'}>
+                      <button onClick={togglePomo} className="p-3 rounded-[10px] border border-white/40 hover:bg-white hover:text-ink transition-colors" aria-label={pomoRunning ? 'Pause' : 'Play'}>
                         {pomoRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                       </button>
-                      <button onClick={resetPomo} className="p-3 rounded-[10px] border border-white/40 hover:bg-white hover:text-[#23271F] transition-colors" aria-label="Reset">
+                      <button onClick={resetPomo} className="p-3 rounded-[10px] border border-white/40 hover:bg-white hover:text-ink transition-colors" aria-label="Reset">
                         <RotateCcw className="w-4 h-4" />
                       </button>
                     </div>
                   </motion.div>
                 )}
                 {trigger === 'PROMPT_CALENDAR_SYNC' && tasks.length > 0 && (
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                    className="bg-white border border-[#23271F]/12 p-5 rounded-[14px] flex items-center justify-between gap-4 shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
+                  <motion.div {...(reducedMotion ? FADE_UP_REDUCED : FADE_UP)} transition={{ duration: DURATION.base, ease: EASE_STANDARD }}
+                    className="bg-white border border-ink/12 p-5 rounded-[14px] flex items-center justify-between gap-4 shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
                     <div className="flex items-center gap-4">
-                      <CalendarPlus className="w-6 h-6 text-[#2F7A64]" />
+                      <CalendarPlus className="w-6 h-6 text-accent" />
                       <div>
                         <span className="font-sans text-[10px] uppercase tracking-wider font-semibold opacity-60">Lock in the deadlines</span>
                         <p className="font-sans text-sm">Export your plan so it lives in your real calendar.</p>
                       </div>
                     </div>
                     <a href={api.calendarIcsUrl()}
-                      className="font-sans text-[11px] font-semibold uppercase tracking-wider px-4 py-3 rounded-[10px] bg-[#2F7A64] text-white hover:bg-[#245E4E] transition-colors whitespace-nowrap flex items-center gap-2">
+                      className="font-sans text-[11px] font-semibold uppercase tracking-wider px-4 py-3 rounded-[10px] bg-accent text-white hover:bg-accent-strong transition-colors whitespace-nowrap flex items-center gap-2">
                       <Download className="w-3 h-3" /> Export .ics
                     </a>
                   </motion.div>
@@ -994,18 +997,18 @@ export default function App() {
 
               <AnimatePresence>
                 {action && (
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                    className="bg-white border border-[#23271F]/12 rounded-[14px] overflow-hidden shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
-                    <div className="flex items-center justify-between border-b border-[#23271F]/10 px-5 py-3">
+                  <motion.div {...(reducedMotion ? FADE_UP_REDUCED : FADE_UP)} transition={{ duration: DURATION.base, ease: EASE_STANDARD }}
+                    className="bg-white border border-ink/12 rounded-[14px] overflow-hidden shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
+                    <div className="flex items-center justify-between border-b border-ink/10 px-5 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-sans text-[9px] font-semibold px-2 py-1 rounded-full bg-[#C2632F] text-white uppercase tracking-wider">Started for you</span>
+                        <span className="font-sans text-[9px] font-semibold px-2 py-1 rounded-full bg-danger text-white uppercase tracking-wider">Started for you</span>
                         <span className="font-sans text-[11px] font-semibold uppercase tracking-wider opacity-70">{ACTION_LABEL[action.action_type] ?? action.action_type}</span>
                       </div>
-                      <button onClick={copyAction} className="font-sans text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1 hover:text-[#C2632F] transition-colors">
+                      <button onClick={copyAction} className="font-sans text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1 hover:text-danger transition-colors">
                         {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}{copied ? 'Copied' : 'Copy'}
                       </button>
                     </div>
-                    <pre className="font-sans text-[13px] leading-relaxed p-5 whitespace-pre-wrap bg-[#F1F3EF] max-h-72 overflow-y-auto">{action.action_content}</pre>
+                    <pre className="font-sans text-[13px] leading-relaxed p-5 whitespace-pre-wrap bg-background max-h-72 overflow-y-auto">{action.action_content}</pre>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1110,7 +1113,13 @@ export default function App() {
           )}
 
           {tab === 'devices' && (
-            <DevicesScreen task={executionTask} focusPrefs={focusPrefs} onUpdateFocusPrefs={updateFocusPrefs} />
+            <DevicesScreen
+              task={executionTask}
+              isActive={executionTask?.status === 'IN_PROGRESS'}
+              pomoRunning={pomoRunning}
+              focusPrefs={focusPrefs}
+              onUpdateFocusPrefs={updateFocusPrefs}
+            />
           )}
 
           {tab === 'activity' && <ActivityScreen sessions={sessions} tasks={tasks} />}
@@ -1133,7 +1142,7 @@ export default function App() {
           </div>
       </main>
 
-      <footer className="px-4 md:px-8 py-3 border-t border-[#23271F]/14 bg-white">
+      <footer className="px-4 md:px-8 py-3 border-t border-ink/14 bg-white">
         <div className="font-sans text-[10px] uppercase font-semibold opacity-60">Proactive Engine Online</div>
       </footer>
       </div>

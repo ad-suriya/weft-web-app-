@@ -2,6 +2,7 @@ import React, {lazy, Suspense} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import {PrivacyPolicy} from './PrivacyPolicy.tsx';
+import {ToastProvider} from './components/ToastProvider.tsx';
 import './index.css';
 
 // No router in this app — a single path check is enough for the few static
@@ -25,7 +26,11 @@ if (path === '/privacy') {
     </Suspense>
   );
 } else {
-  Root = <App />;
+  Root = (
+    <ToastProvider>
+      <App />
+    </ToastProvider>
+  );
 }
 
 createRoot(document.getElementById('root')!).render(Root);

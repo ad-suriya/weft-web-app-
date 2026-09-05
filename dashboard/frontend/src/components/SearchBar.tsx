@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Search, X, Loader2 } from 'lucide-react';
 import { api } from '../api';
 import { SearchResults, Task } from '../types';
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { DURATION } from '../lib/motion';
 
 interface Props {
   onSelectTask: (task: Task) => void;
@@ -19,6 +22,7 @@ export default function SearchBar({ onSelectTask, onSelectGoal, onSelectHabit }:
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const reduced = useReducedMotion();
 
   useEffect(() => {
     if (!query.trim()) {
@@ -59,77 +63,85 @@ export default function SearchBar({ onSelectTask, onSelectGoal, onSelectHabit }:
 
   return (
     <div ref={boxRef} className="relative">
-      <div className="flex items-center gap-2 border border-[#23271F]/14 px-3 py-1.5 bg-white">
-        <Search className="w-3.5 h-3.5 opacity-60 shrink-0" />
+      <div className="flex items-center gap-2 rounded-md border border-ink/14 px-3 py-1.5 bg-surface focus-within:ring-1 focus-within:ring-accent transition-colors">
+        <Search className="w-3.5 h-3.5 text-ink-faint shrink-0" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => results && setOpen(true)}
           placeholder="Search everything…"
-          className="font-sans text-xs focus:outline-none w-36 md:w-44"
+          className="font-sans text-xs focus:outline-none w-36 md:w-44 bg-transparent"
         />
         {loading ? (
-          <Loader2 className="w-3 h-3 animate-spin opacity-50 shrink-0" />
+          <Loader2 className="w-3 h-3 animate-spin text-ink-faint shrink-0" />
         ) : query ? (
           <button onClick={clear} aria-label="Clear search">
-            <X className="w-3 h-3 opacity-50" />
+            <X className="w-3 h-3 text-ink-faint" />
           </button>
         ) : null}
       </div>
 
-      {open && results && (
-        <div className="absolute top-full mt-1 right-0 w-80 bg-white border border-[#23271F]/14 shadow-[0_6px_20px_rgba(35,39,31,0.08)] max-h-96 overflow-y-auto z-50">
-          {total === 0 ? (
-            <div className="p-3 font-sans text-xs opacity-50 italic">No matches.</div>
-          ) : (
-            <>
-              {results.tasks.length > 0 && (
-                <div className="p-2">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Tasks</p>
-                  {results.tasks.map((t) => (
-                    <button key={t.id} onClick={() => { onSelectTask(t); clear(); }}
-                      className="w-full text-left px-2 py-1.5 hover:bg-[#F1F3EF] font-sans text-sm truncate block">
-                      {t.task_name}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.goals.length > 0 && (
-                <div className="p-2 border-t border-[#23271F]/10">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Goals</p>
-                  {results.goals.map((g) => (
-                    <button key={g.id} onClick={() => { onSelectGoal(); clear(); }}
-                      className="w-full text-left px-2 py-1.5 hover:bg-[#F1F3EF] font-sans text-sm truncate block">
-                      {g.title}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.habits.length > 0 && (
-                <div className="p-2 border-t border-[#23271F]/10">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Habits</p>
-                  {results.habits.map((h) => (
-                    <button key={h.id} onClick={() => { onSelectHabit(); clear(); }}
-                      className="w-full text-left px-2 py-1.5 hover:bg-[#F1F3EF] font-sans text-sm truncate block">
-                      {h.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.sessions.length > 0 && (
-                <div className="p-2 border-t border-[#23271F]/10">
-                  <p className="font-sans text-[9px] uppercase font-bold tracking-wider opacity-50 px-1 mb-1">Focus Sessions</p>
-                  {results.sessions.map((s) => (
-                    <div key={s.id} className="px-2 py-1.5 font-sans text-sm truncate opacity-70">
-                      {s.description || 'Focus session'}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && results && (
+          <motion.div
+            initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+            animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: DURATION.base }}
+            className="absolute top-full mt-1 right-0 w-80 rounded-lg bg-surface border border-ink/14 shadow-popover max-h-96 overflow-y-auto z-50 origin-top-right"
+          >
+            {total === 0 ? (
+              <div className="p-3 font-sans text-xs text-ink-faint italic">No matches.</div>
+            ) : (
+              <>
+                {results.tasks.length > 0 && (
+                  <div className="p-2">
+                    <p className="font-sans text-[9px] uppercase font-semibold tracking-wider text-ink-faint px-1 mb-1">Tasks</p>
+                    {results.tasks.map((t) => (
+                      <button key={t.id} onClick={() => { onSelectTask(t); clear(); }}
+                        className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-background font-sans text-sm truncate block transition-colors">
+                        {t.task_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {results.goals.length > 0 && (
+                  <div className="p-2 border-t border-ink/10">
+                    <p className="font-sans text-[9px] uppercase font-semibold tracking-wider text-ink-faint px-1 mb-1">Goals</p>
+                    {results.goals.map((g) => (
+                      <button key={g.id} onClick={() => { onSelectGoal(); clear(); }}
+                        className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-background font-sans text-sm truncate block transition-colors">
+                        {g.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {results.habits.length > 0 && (
+                  <div className="p-2 border-t border-ink/10">
+                    <p className="font-sans text-[9px] uppercase font-semibold tracking-wider text-ink-faint px-1 mb-1">Habits</p>
+                    {results.habits.map((h) => (
+                      <button key={h.id} onClick={() => { onSelectHabit(); clear(); }}
+                        className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-background font-sans text-sm truncate block transition-colors">
+                        {h.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {results.sessions.length > 0 && (
+                  <div className="p-2 border-t border-ink/10">
+                    <p className="font-sans text-[9px] uppercase font-semibold tracking-wider text-ink-faint px-1 mb-1">Focus Sessions</p>
+                    {results.sessions.map((s) => (
+                      <div key={s.id} className="px-2 py-1.5 font-sans text-sm truncate text-ink-soft">
+                        {s.description || 'Focus session'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

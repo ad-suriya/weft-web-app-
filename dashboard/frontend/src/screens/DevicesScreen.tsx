@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { Laptop, Smartphone, ArrowLeftRight, Puzzle, Plus, X } from 'lucide-react';
+import { Laptop, Smartphone, Puzzle, Plus, X } from 'lucide-react';
 import { FocusPrefs, Task } from '../types';
-import { CARD, CARD_DARK, BTN, ScreenHead, SectionRule, Eyebrow, Pill, PreviewTag, Toggle } from './ui';
+import { CARD, BTN, ScreenHead, SectionRule, Eyebrow, Pill, Toggle } from './ui';
+import FocusBridge from './FocusBridge';
 
 interface Props {
   task: Task | null;
+  isActive: boolean;
+  pomoRunning: boolean;
   focusPrefs: FocusPrefs;
   onUpdateFocusPrefs: (patch: Partial<FocusPrefs>) => void;
 }
@@ -17,7 +20,7 @@ function thisDevice(): string {
   return `${browser} · ${os}`;
 }
 
-export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: Props) {
+export default function DevicesScreen({ task, isActive, pomoRunning, focusPrefs, onUpdateFocusPrefs }: Props) {
   const [newAllow, setNewAllow] = useState('');
 
   const addAllowed = () => {
@@ -35,32 +38,13 @@ export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: 
         rules are meant to push across the link automatically.
       </ScreenHead>
 
-      <div className={`${CARD_DARK} p-5`}>
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70">
-            The link · phone ⇄ laptop
-          </span>
-          <PreviewTag />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_max-content_1fr] items-center gap-4">
-          <div>
-            <div className="font-sans text-[9px] font-semibold uppercase tracking-[0.14em] text-white/45">Laptop — leads</div>
-            <div className="font-sans text-[13px] font-semibold mt-1 flex items-center gap-1.5">
-              <Laptop className="w-4 h-4" /> {task ? task.task_name : 'No active task'}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-[#7FD1BE] justify-center">
-            <ArrowLeftRight className="w-5 h-5" />
-            <span className="font-sans text-[8.5px] font-bold uppercase tracking-[0.16em]">Not linked</span>
-          </div>
-          <div className="sm:text-right">
-            <div className="font-sans text-[9px] font-semibold uppercase tracking-[0.14em] text-white/45">Phone — follows</div>
-            <div className="font-sans text-[13px] font-semibold mt-1 flex items-center gap-1.5 sm:justify-end text-white/60">
-              <Smartphone className="w-4 h-4" /> Study Focus · {focusPrefs.study_focus ? 'on (this device only)' : 'off'}
-            </div>
-          </div>
-        </div>
-      </div>
+      <FocusBridge
+        task={task}
+        isActive={isActive}
+        pomoRunning={pomoRunning}
+        focusPrefs={focusPrefs}
+        onToggleStudyFocus={() => onUpdateFocusPrefs({ study_focus: !focusPrefs.study_focus })}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <section className={`${CARD} p-5`}>
@@ -70,7 +54,7 @@ export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: 
             </span>
             <Pill tone="green">This device</Pill>
           </div>
-          <p className="font-sans text-[11.5px] text-[#64695D] mt-2 leading-relaxed">
+          <p className="font-sans text-[11.5px] text-ink-soft mt-2 leading-relaxed">
             {thisDevice()}
             <br />
             Driving the session · {task ? `working on “${task.task_name}”` : 'idle'}
@@ -84,7 +68,7 @@ export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: 
             </span>
             <Pill tone="neutral">Not connected</Pill>
           </div>
-          <p className="font-sans text-[11.5px] text-[#64695D] mt-2 leading-relaxed">
+          <p className="font-sans text-[11.5px] text-ink-soft mt-2 leading-relaxed">
             Install the WEFT extension and mobile app to link a phone. Once linked, Study Focus mirrors your laptop&apos;s
             current task and holds non-essential notifications during a session.
           </p>
@@ -94,20 +78,20 @@ export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: 
       <section className={`${CARD} p-5`}>
         <SectionRule>Focus Bridge</SectionRule>
 
-        <div className="flex items-center justify-between gap-6 py-3 border-t border-[#23271F]/8 first:border-t-0">
+        <div className="flex items-center justify-between gap-6 py-3 border-t border-ink/8 first:border-t-0">
           <div>
             <div className="font-sans text-[13px] font-semibold">Study Focus</div>
-            <div className="font-sans text-[11.5px] text-[#64695D] mt-0.5">
+            <div className="font-sans text-[11.5px] text-ink-soft mt-0.5">
               While on, reminder notifications are held on this device during a running focus session.
             </div>
           </div>
           <Toggle on={focusPrefs.study_focus} onChange={() => onUpdateFocusPrefs({ study_focus: !focusPrefs.study_focus })} label="Study Focus" />
         </div>
 
-        <div className="flex items-center justify-between gap-6 py-3 border-t border-[#23271F]/8">
+        <div className="flex items-center justify-between gap-6 py-3 border-t border-ink/8">
           <div>
             <div className="font-sans text-[13px] font-semibold">Hold notifications during a session</div>
-            <div className="font-sans text-[11.5px] text-[#64695D] mt-0.5">
+            <div className="font-sans text-[11.5px] text-ink-soft mt-0.5">
               Held notifications still show once you end the session — nothing is lost, just delayed.
             </div>
           </div>
@@ -118,14 +102,14 @@ export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: 
           />
         </div>
 
-        <div className="py-3 border-t border-[#23271F]/8">
+        <div className="py-3 border-t border-ink/8">
           <div className="font-sans text-[13px] font-semibold mb-1">Always allowed</div>
-          <div className="font-sans text-[11.5px] text-[#64695D] mb-3">These break through, session or not.</div>
+          <div className="font-sans text-[11.5px] text-ink-soft mb-3">These break through, session or not.</div>
           <div className="flex flex-wrap gap-2 mb-3">
             {focusPrefs.allow_list.map((v) => (
-              <span key={v} className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full border border-[#23271F]/14 bg-white font-sans text-[11px]">
+              <span key={v} className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full border border-ink/14 bg-surface font-sans text-[11px]">
                 {v}
-                <button onClick={() => removeAllowed(v)} aria-label={`Remove ${v}`} className="p-0.5 text-[#8C9184] hover:text-[#C2632F]">
+                <button onClick={() => removeAllowed(v)} aria-label={`Remove ${v}`} className="p-0.5 text-ink-faint hover:text-danger">
                   <X className="w-3 h-3" />
                 </button>
               </span>
@@ -137,7 +121,7 @@ export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: 
               onChange={(e) => setNewAllow(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAllowed(); } }}
               placeholder="Add a name or category…"
-              className="flex-grow px-3 py-1.5 rounded-[8px] border border-[#23271F]/18 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#2F7A64]"
+              className="flex-grow px-3 py-1.5 rounded-sm border border-ink/18 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-accent"
             />
             <button onClick={addAllowed} disabled={!newAllow.trim()} className={BTN}>
               <Plus className="w-3.5 h-3.5" /> Add
@@ -152,7 +136,7 @@ export default function DevicesScreen({ task, focusPrefs, onUpdateFocusPrefs }: 
           <Puzzle className="w-3.5 h-3.5" /> Get the extension
         </a>
       </div>
-      <p className="font-sans text-[10.5px] text-[#8C9184] leading-relaxed max-w-[54ch]">
+      <p className="font-sans text-[10.5px] text-ink-faint leading-relaxed max-w-[54ch]">
         <Eyebrow>Preview</Eyebrow> — phone pairing isn&apos;t wired up in this build; the panel above shows the shape
         of that feature. The Focus Bridge settings above are real and saved to your account.
       </p>

@@ -356,14 +356,45 @@ html:has(.weft-landing) { scroll-behavior: smooth; }
 .weft-landing .foot__links a:hover { color: var(--ink); }
 .weft-landing .foot__note { width: 100%; font: 500 10.5px/1.6 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
 
-/* ---------- reveal (readable at rest) ---------- */
+/* ---------- reveal ---------- */
 .weft-landing .reveal { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
-  .weft-landing .reveal:not(.in) { transform: translateY(14px); }
-  .weft-landing .reveal { transition: transform 0.55s cubic-bezier(0.22,1,0.36,1); }
-  .weft-landing .reveal.in { transform: none; }
-  .weft-landing.no-js .reveal { transform: none; }
+  .weft-landing .reveal:not(.in) { opacity: 0; transform: translateY(18px); }
+  .weft-landing .reveal { transition: opacity 0.6s cubic-bezier(0.22,1,0.36,1), transform 0.6s cubic-bezier(0.22,1,0.36,1); }
+  .weft-landing .reveal.in { opacity: 1; transform: none; }
+  .weft-landing.no-js .reveal { opacity: 1; transform: none; }
 }
+
+/* ---------- scroll progress ---------- */
+.weft-scroll-progress {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 70;
+  transform-origin: 0 50%; transform: scaleX(0);
+  background: var(--green, #2A6B5E);
+}
+
+/* ---------- nav scroll elevation ---------- */
+.weft-landing .nav { transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+.weft-landing .nav.is-scrolled { box-shadow: 0 6px 24px rgba(26,26,26,0.08); }
+
+/* ---------- extra hover-lift for device/stage/proof cards (matches .feat) ---------- */
+.weft-landing .dv,
+.weft-landing .stage-card,
+.weft-landing .proof-cell {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+@media (hover: hover) {
+  .weft-landing .dv:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow); }
+  .weft-landing .stage-card:hover { transform: translate(-2px, -2px); }
+  .weft-landing .proof-cell:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-sm); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .weft-landing .dv:hover, .weft-landing .stage-card:hover, .weft-landing .proof-cell:hover { transform: none; }
+}
+
+/* ---------- CTA arrow nudge ---------- */
+.weft-landing .btn svg { transition: transform 0.18s ease; }
+.weft-landing .btn:hover svg { transform: translateX(3px); }
+@media (prefers-reduced-motion: reduce) { .weft-landing .btn:hover svg { transform: none; } }
 
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
@@ -371,4 +402,84 @@ html:has(.weft-landing) { scroll-behavior: smooth; }
   .weft-landing .ps-grid { grid-template-columns: 1fr; }
   .weft-landing .sync-grid { grid-template-columns: 1fr; }
   .weft-landing .devstack { max-width: 460px; }
+}
+
+/* ---------- sign-in error alert ----------
+ * Deliberately its own top-level namespace (not `.weft-landing …`) so it
+ * renders correctly as a sibling of that div, not a descendant of it — same
+ * letterpress palette/shadow language, hardcoded here rather than relying on
+ * .weft-landing's scoped custom properties. */
+.weft-auth-alert-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 14px 16px 0;
+}
+.weft-auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 480px;
+  width: 100%;
+  background: #FFFFFF;
+  border: 2px solid #1A1A1A;
+  box-shadow: 5px 5px 0 0 #1A1A1A;
+  padding: 14px 16px;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.weft-auth-alert__icon {
+  flex-shrink: 0;
+  color: #D14D2A;
+  margin-top: 1px;
+}
+.weft-auth-alert__body { flex-grow: 1; min-width: 0; }
+.weft-auth-alert__title {
+  font-weight: 800;
+  font-size: 13px;
+  color: #1A1A1A;
+  margin: 0 0 2px;
+}
+.weft-auth-alert__message {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #34302A;
+  margin: 0 0 10px;
+}
+.weft-auth-alert__retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 800 10.5px/1 "Inter", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: #1A1A1A;
+  color: #F5F2ED;
+  border: none;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.weft-auth-alert__retry:hover { background: #34302A; }
+.weft-auth-alert__dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #948C7E;
+  cursor: pointer;
+  padding: 2px;
+  line-height: 0;
+  transition: color 0.15s ease;
+}
+.weft-auth-alert__dismiss:hover { color: #1A1A1A; }
+
+/* ---------- sign-in CTA loading state ---------- */
+.weft-landing a.is-authenticating {
+  cursor: default;
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .weft-landing a.is-authenticating { animation: weft-auth-pulse 1.1s ease-in-out infinite; }
+}
+@keyframes weft-auth-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.55; }
 }

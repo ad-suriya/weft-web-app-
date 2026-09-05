@@ -1,5 +1,7 @@
 import '@src/Popup.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { CheckCircle2, AlertTriangle, Lock, ChevronUp, ChevronDown, Crosshair, Check, X, ListTodo } from 'lucide-react';
 import { useStorage, withErrorBoundary, withSuspense, scoreRelevance, type RelevanceResult } from '@extension/shared';
 import {
   exampleThemeStorage,
@@ -15,7 +17,7 @@ import {
   FRONTEND_URL,
   API_BASE,
 } from '@extension/storage';
-import { cn, LoadingSpinner, TimeTracker } from '@extension/ui';
+import { cn, LoadingSpinner, TimeTracker, Badge, EmptyState, Skeleton, useReducedMotion } from '@extension/ui';
 import { Login } from './Login';
 import { ConsentNotice } from './ConsentNotice';
 import type { FocusSession, Task, WorkflowSummary } from '@extension/types';
@@ -46,6 +48,8 @@ function Popup() {
   const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowSummary | undefined>(undefined);
   const [savingReference, setSavingReference] = useState(false);
   const [referenceSaved, setReferenceSaved] = useState(false);
+  const [tasksLoaded, setTasksLoaded] = useState(false);
+  const reduced = useReducedMotion();
 
   // authStorage is updated live by the background script when the dashboard
   // bridge relays a login. Once that lands, enrich the user with backend data.
@@ -92,6 +96,24 @@ function Popup() {
         const activeSession = await focusSessionStorage.getCurrent();
         setSession(activeSession);
 
+        // Site blocking (blockingStorage) and the focus session it belongs to
+        // (focusSessionStorage, backed by the SAME backend /sessions the
+        // dashboard's own Start/Complete flow writes to) are two separate
+        // storages. `enable`/`lockToSite` are only ever called alongside
+        // starting a session, but the only place that ever called `disable`
+        // was this popup's own Stop button — so ending the session from the
+        // dashboard instead (finishing the task, letting the timer run out,
+        // just closing the tab) left blockedSites/allowedSite active forever,
+        // with no session left to ever stop it. Session state is the source
+        // of truth: no active session means blocking has nothing to attach
+        // to, so clear it here too, not just on the popup's own Stop click.
+        if (!activeSession) {
+          const currentBlocking = await blockingStorage.get();
+          if (currentBlocking.isActive) {
+            await blockingStorage.disable();
+          }
+        }
+
         const now = Date.now();
         const startOfDay = new Date(now);
         startOfDay.setHours(0, 0, 0, 0);
@@ -131,6 +153,8 @@ function Popup() {
       setTasks(openTasks);
     } catch (err) {
       console.error('Failed to load tasks:', err);
+    } finally {
+      setTasksLoaded(true);
     }
   };
 
@@ -389,11 +413,11 @@ function Popup() {
 
       {/* Time Totals */}
       <div className="flex gap-3 text-center">
-        <div className={cn('flex-1 border py-2', isLight ? 'border-ink/15' : 'border-paper/20')}>
+        <div className={cn('flex-1 rounded-lg shadow-card border py-2', isLight ? 'border-ink/15' : 'border-paper/20')}>
           <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">Today</p>
           <p className="font-serif font-black text-2xl">{formatMs(todayTotal)}</p>
         </div>
-        <div className={cn('flex-1 border py-2', isLight ? 'border-ink/15' : 'border-paper/20')}>
+        <div className={cn('flex-1 rounded-lg shadow-card border py-2', isLight ? 'border-ink/15' : 'border-paper/20')}>
           <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">This Week</p>
           <p className="font-serif font-black text-2xl">{formatMs(weekTotal)}</p>
         </div>
@@ -404,7 +428,7 @@ function Popup() {
           workflow). Nothing shown if no session is running or it isn't
           pinned to a task. */}
       {currentTask && (
-        <div className={cn('border p-3 flex flex-col gap-1', isLight ? 'border-ink/15 bg-[#F5F2ED]' : 'border-paper/20 bg-[#1a1a1a]')}>
+        <div className={cn('rounded-lg shadow-card border p-3 flex flex-col gap-1', isLight ? 'border-ink/15 bg-ink/[0.03]' : 'border-paper/20 bg-paper/[0.05]')}>
           <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">Current Work</p>
           <p className="text-sm font-semibold truncate">{currentTask.title}</p>
           {currentStepText && <p className="text-xs opacity-70 truncate">Step: {currentStepText}</p>}
@@ -421,47 +445,54 @@ function Popup() {
           here is read only while the popup is open (chrome.tabs.query on a
           poll), never scanned in the background. */}
       {activeTab && (
-        <div className={cn('border p-3 flex flex-col gap-2', isLight ? 'border-ink/15' : 'border-paper/20')}>
+        <div className={cn('rounded-lg shadow-card border p-3 flex flex-col gap-2', isLight ? 'border-ink/15' : 'border-paper/20')}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] uppercase tracking-widest font-bold opacity-60">This Page</p>
             {relevance && relevance.verdict !== 'unknown' && (
-              <span
-                className={cn(
-                  'text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 border',
-                  relevance.verdict === 'relevant'
-                    ? 'border-planning text-planning'
-                    : 'border-panic text-panic',
-                )}
-              >
-                {relevance.verdict === 'relevant' ? '● Relevant' : '⚠ Context switch'}
-              </span>
+              <Badge tone={relevance.verdict === 'relevant' ? 'success' : 'danger'}>
+                {relevance.verdict === 'relevant' ? <CheckCircle2 className="w-2.5 h-2.5" /> : <AlertTriangle className="w-2.5 h-2.5" />}
+                {relevance.verdict === 'relevant' ? 'Relevant' : 'Context switch'}
+              </Badge>
             )}
           </div>
           <p className="text-sm truncate" title={activeTab.title}>{activeTab.title || activeTab.url}</p>
-          <button
+          <motion.button
             onClick={handleSaveReference}
             disabled={savingReference}
+            whileTap={reduced || savingReference ? undefined : { scale: 0.97 }}
             className={cn(
-              'self-start px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold border transition-colors disabled:opacity-50',
+              'self-start px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold border transition-colors disabled:opacity-50 flex items-center gap-1.5',
               isLight ? 'border-ink hover:bg-ink hover:text-paper' : 'border-paper hover:bg-paper hover:text-ink',
             )}
           >
-            {savingReference ? 'Saving…' : referenceSaved ? 'Saved ✓' : 'Save Reference'}
-          </button>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={savingReference ? 'saving' : referenceSaved ? 'saved' : 'idle'}
+                initial={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-1.5"
+              >
+                {referenceSaved && !savingReference && <Check className="w-3 h-3" />}
+                {savingReference ? 'Saving…' : referenceSaved ? 'Saved' : 'Save Reference'}
+              </motion.span>
+            </AnimatePresence>
+          </motion.button>
         </div>
       )}
 
       {/* Task-capture site lock — distinct from the blocklist below: instead
           of blocking a few distracting sites, ONLY this one is reachable. */}
       {blockingState.isActive && blockingState.mode === 'allowlist' && blockingState.allowedSite && (
-        <div className={cn('flex items-center justify-between gap-2 border p-3', isLight ? 'border-ink bg-[#F5F2ED]' : 'border-paper bg-[#222]')}>
-          <p className="text-xs" title="Every other site is blocked until you finish this task or hit Unlock — set from the capture popup's lock checkbox.">
-            🔒 Locked to <strong>{blockingState.allowedSite}</strong>
+        <div className={cn('flex items-center justify-between gap-2 rounded-lg shadow-card border p-3', isLight ? 'border-ink bg-ink/[0.03]' : 'border-paper bg-paper/[0.08]')}>
+          <p className="text-xs flex items-center gap-1.5" title="Every other site is blocked until you finish this task or hit Unlock — set from the capture popup's lock checkbox.">
+            <Lock className="w-3.5 h-3.5 shrink-0" /> Locked to <strong>{blockingState.allowedSite}</strong>
           </p>
           <button
             onClick={handleStop}
             className={cn(
-              'px-2 py-1 text-[10px] uppercase tracking-widest font-bold border shrink-0',
+              'px-2 py-1 rounded-md text-[10px] uppercase tracking-widest font-bold border shrink-0 transition-colors',
               isLight ? 'border-ink hover:bg-ink hover:text-paper' : 'border-paper hover:bg-paper hover:text-ink',
             )}
           >
@@ -487,33 +518,39 @@ function Popup() {
               if (e.key === 'Enter') handleAddTask();
             }}
             className={cn(
-              'flex-1 px-3 py-2 border text-sm focus:outline-none',
+              'flex-1 px-3 py-2 rounded-md border text-sm focus:outline-none transition-colors',
               isLight
                 ? 'bg-white border-ink/30 text-ink focus:border-ink'
                 : 'bg-ink border-paper/30 text-paper focus:border-paper',
             )}
           />
-          <button
+          <motion.button
             onClick={handleAddTask}
+            whileTap={reduced ? undefined : { scale: 0.96 }}
             className={cn(
-              'px-3 py-2 text-[10px] uppercase tracking-widest font-bold border',
+              'px-3 py-2 rounded-md text-[10px] uppercase tracking-widest font-bold border transition-colors',
               isLight ? 'bg-ink text-paper border-ink hover:bg-[#333]' : 'bg-paper text-ink border-paper hover:bg-gray-200',
             )}
           >
             Add
-          </button>
+          </motion.button>
         </div>
 
         {taskError && <p className="text-xs text-panic">{taskError}</p>}
 
         <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
-          {tasks.length === 0 ? (
-            <p className="text-xs opacity-50 py-2 text-center">No open tasks</p>
+          {!tasksLoaded ? (
+            <>
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </>
+          ) : tasks.length === 0 ? (
+            <EmptyState icon={ListTodo} title="No open tasks" description="Add one above, or capture it from any page." />
           ) : (
             tasks.map(task => (
               <div
                 key={task.id}
-                className={cn('flex items-start justify-between gap-2 border p-2', isLight ? 'border-ink/15' : 'border-paper/20')}
+                className={cn('flex items-start justify-between gap-2 rounded-md border p-2', isLight ? 'border-ink/15' : 'border-paper/20')}
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{task.title}</p>
@@ -533,12 +570,12 @@ function Popup() {
                     onClick={() => handleFocusTask(task)}
                     disabled={!!session?.isActive}
                     title={session?.isActive ? 'Stop the current session first' : 'Focus on this task'}
-                    className="text-sm hover:opacity-70 disabled:opacity-30 disabled:hover:opacity-30"
+                    className="p-1 rounded-sm hover:bg-current/10 transition-colors disabled:opacity-30"
                   >
-                    🎯
+                    <Crosshair className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => handleCompleteTask(task.id)} className="text-sm hover:opacity-70" title="Mark done">
-                    ✓
+                  <button onClick={() => handleCompleteTask(task.id)} className="p-1 rounded-sm hover:bg-current/10 transition-colors" title="Mark done">
+                    <Check className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -555,63 +592,73 @@ function Popup() {
           className="flex items-center justify-between text-[10px] uppercase tracking-widest font-bold opacity-60"
         >
           <span>Blocked Sites During Focus ({blockedSites.length})</span>
-          <span>{showBlocklist ? '▲' : '▼'}</span>
+          <motion.span animate={{ rotate: showBlocklist ? 180 : 0 }} transition={{ duration: reduced ? 0 : 0.2 }}>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </motion.span>
         </button>
 
-        {showBlocklist && (
-          <>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="e.g. tiktok.com"
-                value={newSite}
-                onChange={e => setNewSite(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleAddSite();
-                }}
-                className={cn(
-                  'flex-1 px-3 py-2 border text-sm focus:outline-none',
-                  isLight
-                    ? 'bg-white border-ink/30 text-ink focus:border-ink'
-                    : 'bg-ink border-paper/30 text-paper focus:border-paper',
-                )}
-              />
-              <button
-                onClick={handleAddSite}
-                className={cn(
-                  'px-3 py-2 text-[10px] uppercase tracking-widest font-bold border',
-                  isLight ? 'bg-ink text-paper border-ink hover:bg-[#333]' : 'bg-paper text-ink border-paper hover:bg-gray-200',
-                )}
-              >
-                Add
-              </button>
-            </div>
+        <AnimatePresence initial={false}>
+          {showBlocklist && (
+            <motion.div
+              initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              transition={{ duration: reduced ? 0 : 0.2 }}
+              className="flex flex-col gap-2 overflow-hidden"
+            >
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. tiktok.com"
+                  value={newSite}
+                  onChange={e => setNewSite(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleAddSite();
+                  }}
+                  className={cn(
+                    'flex-1 px-3 py-2 rounded-md border text-sm focus:outline-none transition-colors',
+                    isLight
+                      ? 'bg-white border-ink/30 text-ink focus:border-ink'
+                      : 'bg-ink border-paper/30 text-paper focus:border-paper',
+                  )}
+                />
+                <button
+                  onClick={handleAddSite}
+                  className={cn(
+                    'px-3 py-2 rounded-md text-[10px] uppercase tracking-widest font-bold border transition-colors',
+                    isLight ? 'bg-ink text-paper border-ink hover:bg-[#333]' : 'bg-paper text-ink border-paper hover:bg-gray-200',
+                  )}
+                >
+                  Add
+                </button>
+              </div>
 
-            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-              {blockedSites.length === 0 ? (
-                <p className="text-xs opacity-50 py-2">No sites blocked — focus sessions won't restrict anything.</p>
-              ) : (
-                blockedSites.map(site => (
-                  <span
-                    key={site}
-                    className={cn(
-                      'flex items-center gap-1.5 px-2 py-1 text-xs border',
-                      isLight ? 'border-ink/20' : 'border-paper/20',
-                    )}
-                  >
-                    {site}
-                    <button onClick={() => handleRemoveSite(site)} className="hover:text-panic" aria-label={`Remove ${site}`}>
-                      ✕
-                    </button>
-                  </span>
-                ))
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                {blockedSites.length === 0 ? (
+                  <p className="text-xs opacity-50 py-2">No sites blocked — focus sessions won't restrict anything.</p>
+                ) : (
+                  blockedSites.map(site => (
+                    <span
+                      key={site}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border',
+                        isLight ? 'border-ink/20' : 'border-paper/20',
+                      )}
+                    >
+                      {site}
+                      <button onClick={() => handleRemoveSite(site)} className="hover:text-panic transition-colors" aria-label={`Remove ${site}`}>
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+              {session && (
+                <p className="text-[10px] opacity-50 italic">Changes apply immediately to this session.</p>
               )}
-            </div>
-            {session && (
-              <p className="text-[10px] opacity-50 italic">Changes apply immediately to this session.</p>
-            )}
-          </>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Footer Actions */}
@@ -619,7 +666,7 @@ function Popup() {
         <button
           onClick={openDashboard}
           className={cn(
-            'flex-1 py-2 px-3 text-[10px] uppercase tracking-widest font-bold border transition-colors',
+            'flex-1 py-2 px-3 rounded-md text-[10px] uppercase tracking-widest font-bold border transition-colors',
             isLight ? 'border-ink hover:bg-ink hover:text-paper' : 'border-paper hover:bg-paper hover:text-ink',
           )}
         >
@@ -630,7 +677,7 @@ function Popup() {
           title="How this extension works"
           aria-label="How this extension works"
           className={cn(
-            'w-8 py-2 text-xs font-bold border transition-colors shrink-0',
+            'w-8 py-2 rounded-md text-xs font-bold border transition-colors shrink-0',
             isLight ? 'border-ink hover:bg-ink hover:text-paper' : 'border-paper hover:bg-paper hover:text-ink',
           )}
         >
@@ -639,7 +686,7 @@ function Popup() {
         <button
           onClick={handleLogout}
           className={cn(
-            'flex-1 py-2 px-3 text-[10px] uppercase tracking-widest font-bold border transition-colors',
+            'flex-1 py-2 px-3 rounded-md text-[10px] uppercase tracking-widest font-bold border transition-colors',
             isLight ? 'border-ink hover:bg-ink hover:text-paper' : 'border-paper hover:bg-paper hover:text-ink',
           )}
         >
@@ -650,4 +697,4 @@ function Popup() {
   );
 }
 
-export default withSuspense(Popup, <LoadingSpinner />);
+export default withSuspense(Popup, <LoadingSpinner fullscreen={false} />);

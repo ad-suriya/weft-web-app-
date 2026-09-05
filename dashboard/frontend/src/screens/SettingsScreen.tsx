@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
-  Link2, Unlink, Loader2, Download, Trash2, ShieldCheck, HelpCircle, LogOut, Bell,
+  Link2, Unlink, Download, Trash2, ShieldCheck, HelpCircle, LogOut, Bell,
 } from 'lucide-react';
 import { api } from '../api';
 import { FocusPrefs } from '../types';
-import { CARD, BTN, ScreenHead, SectionRule, Eyebrow, Toggle } from './ui';
+import { CARD, ScreenHead, SectionRule, Eyebrow, Toggle, Button, Input, StatusIndicator } from './ui';
 
 interface Props {
   authUser: { name?: string; email?: string } | null;
@@ -30,10 +30,10 @@ function Setting({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-6 py-4 border-t border-[#23271F]/8 first:border-t-0">
+    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-6 py-4 border-t border-ink/8 first:border-t-0">
       <div>
         <div className="font-sans text-[13px] font-semibold">{label}</div>
-        <div className="font-sans text-[11.5px] text-[#64695D] mt-0.5 max-w-[54ch] leading-relaxed">{desc}</div>
+        <div className="font-sans text-[11.5px] text-ink-soft mt-0.5 max-w-[54ch] leading-relaxed">{desc}</div>
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -106,22 +106,21 @@ export default function SettingsScreen({
         <SectionRule>Google Calendar</SectionRule>
         <Setting
           label="Two-way calendar sync"
-          desc="Pull events you add on your calendar in as tasks, and push your planned blocks back out. Connecting also grants the calendar scope."
+          desc={
+            <>
+              Pull events you add on your calendar in as tasks, and push your planned blocks back out. Connecting also grants the calendar scope.
+              <StatusIndicator
+                tone={calendarConnected ? 'connected' : 'not-connected'}
+                label={calendarConnected ? 'Connected' : 'Not connected'}
+                className="mt-1.5"
+              />
+            </>
+          }
         >
-          <button
-            onClick={calendarConnected ? onDisconnectCalendar : onConnectCalendar}
-            disabled={calendarBusy}
-            className={BTN}
-          >
-            {calendarBusy ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : calendarConnected ? (
-              <Unlink className="w-3.5 h-3.5" />
-            ) : (
-              <Link2 className="w-3.5 h-3.5" />
-            )}
+          <Button onClick={calendarConnected ? onDisconnectCalendar : onConnectCalendar} disabled={calendarBusy} loading={calendarBusy}>
+            {!calendarBusy && (calendarConnected ? <Unlink className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />)}
             {calendarConnected ? 'Disconnect' : 'Connect'}
-          </button>
+          </Button>
         </Setting>
       </section>
 
@@ -140,14 +139,10 @@ export default function SettingsScreen({
                   : 'Off — deadline and focus reminders only show inside the app.'
           }
         >
-          <button
-            onClick={askNotifications}
-            disabled={notifState === 'granted' || notifState === 'denied' || notifState === 'unsupported'}
-            className={BTN}
-          >
+          <Button onClick={askNotifications} disabled={notifState === 'granted' || notifState === 'denied' || notifState === 'unsupported'}>
             <Bell className="w-3.5 h-3.5" />
             {notifState === 'granted' ? 'Enabled' : 'Enable'}
-          </button>
+          </Button>
         </Setting>
       </section>
 
@@ -165,7 +160,7 @@ export default function SettingsScreen({
           />
         </Setting>
         <Setting label="Always allowed" desc={`${focusPrefs.allow_list.length} always break through, session or not. Edit the list from Devices.`}>
-          <button onClick={onGoDevices} className={BTN}>Manage</button>
+          <Button onClick={onGoDevices}>Manage</Button>
         </Setting>
       </section>
 
@@ -174,16 +169,16 @@ export default function SettingsScreen({
         <SectionRule>Privacy &amp; data</SectionRule>
 
         <div className="flex items-start gap-2.5 py-2">
-          <ShieldCheck className="w-4 h-4 mt-0.5 text-[#2F7A64] shrink-0" />
+          <ShieldCheck className="w-4 h-4 mt-0.5 text-accent shrink-0" />
           <p className="font-sans text-[12.5px] leading-relaxed">
             WEFT stores your goal/task text, workflow progress, and titles/URLs of pages you explicitly save.{' '}
-            <a href="/privacy" target="_blank" rel="noreferrer" className="underline font-semibold text-[#2F7A64]">
+            <a href="/privacy" target="_blank" rel="noreferrer" className="underline font-semibold text-accent">
               Read the Privacy Policy
             </a>
             .
           </p>
         </div>
-        <p className="font-sans text-[11px] text-[#8C9184] mb-1">
+        <p className="font-sans text-[11px] text-ink-faint mb-1">
           {consentAcceptedAt
             ? `Data-use notice accepted ${new Date(consentAcceptedAt).toLocaleDateString()}.`
             : 'Data-use notice not yet recorded on this device.'}
@@ -193,38 +188,34 @@ export default function SettingsScreen({
           label="Export my data"
           desc="Download everything WEFT holds for you as a JSON file — workflows, steps, work state and references."
         >
-          <button onClick={exportData} disabled={exporting} className={BTN}>
-            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+          <Button onClick={exportData} disabled={exporting} loading={exporting}>
+            {!exporting && <Download className="w-3.5 h-3.5" />}
             Export JSON
-          </button>
+          </Button>
         </Setting>
 
-        <div className="py-4 border-t border-[#23271F]/8">
-          <div className="font-sans text-[13px] font-semibold text-[#C2632F]">Delete my data</div>
-          <div className="font-sans text-[11.5px] text-[#64695D] mt-0.5 max-w-[54ch] leading-relaxed">
+        <div className="py-4 border-t border-ink/8">
+          <div className="font-sans text-[13px] font-semibold text-danger">Delete my data</div>
+          <div className="font-sans text-[11.5px] text-ink-soft mt-0.5 max-w-[54ch] leading-relaxed">
             Permanently deletes your workflows, steps, work state and references. Cannot be undone. Your account stays
             active.
           </div>
-          <input
+          <Input
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             placeholder="Type DELETE to confirm"
             aria-label="Type DELETE to confirm"
-            className="mt-3 w-full max-w-[280px] px-3 py-2 rounded-[8px] border border-[#23271F]/18 focus:border-[#C2632F] focus:outline-none text-sm"
+            className="mt-3 w-full max-w-[280px]"
           />
           <div>
-            <button
-              onClick={deleteData}
-              disabled={confirm !== 'DELETE' || deleting}
-              className="mt-2 inline-flex items-center gap-2 font-sans text-[11px] uppercase tracking-wider font-semibold px-4 py-2 rounded-[10px] bg-[#C2632F] text-white hover:bg-[#A6532A] transition-colors disabled:opacity-40"
-            >
-              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            <Button variant="danger" onClick={deleteData} disabled={confirm !== 'DELETE' || deleting} loading={deleting} className="mt-2">
+              {!deleting && <Trash2 className="w-3.5 h-3.5" />}
               Delete everything
-            </button>
+            </Button>
           </div>
         </div>
 
-        {err && <p className="text-[#C2632F] text-xs font-semibold mt-2">{err}</p>}
+        {err && <p className="text-danger text-xs font-semibold mt-2">{err}</p>}
       </section>
 
       {/* Account */}
@@ -234,18 +225,18 @@ export default function SettingsScreen({
           label={authUser?.name ? `Signed in as ${authUser.name}` : 'Signed in'}
           desc={authUser?.email ? `${authUser.email} · Google` : 'Google account'}
         >
-          <button onClick={onLogout} className={BTN}>
+          <Button onClick={onLogout}>
             <LogOut className="w-3.5 h-3.5" /> Sign out
-          </button>
+          </Button>
         </Setting>
         <Setting label="Guided tour" desc="Replay the walkthrough of the console.">
-          <button onClick={onReplayTour} className={BTN}>
+          <Button onClick={onReplayTour}>
             <HelpCircle className="w-3.5 h-3.5" /> Replay
-          </button>
+          </Button>
         </Setting>
       </section>
 
-      <p className="font-sans text-[10px] uppercase tracking-wider text-[#8C9184]">
+      <p className="font-sans text-[10px] uppercase tracking-wider text-ink-faint">
         <Eyebrow>Prototype</Eyebrow> — example data. One work state, every device in step.
       </p>
     </div>

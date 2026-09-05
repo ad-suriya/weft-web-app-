@@ -65,8 +65,25 @@ _cached_session = cachecontrol.CacheControl(requests.Session())
 _request = google_requests.Request(session=_cached_session)
 
 
+# google-auth's own iat/exp check (google.auth.jwt._verify_iat_and_exp) compares
+# the token's `iat` against this process's local clock with ZERO tolerance by
+# default — verify_oauth2_token's `clock_skew_in_seconds` defaults to 0. Any
+# sub-second-to-few-second gap between the moment Google stamps `iat` and the
+# moment this call actually runs (normal network/scheduling jitter, not a
+# misconfigured clock — see the comment on GOOGLE_CLOCK_SKEW_SECONDS below)
+# then raises "Token used too early, {now} < {iat}" and looks exactly like an
+# auth bug. This does NOT touch signature, audience, or issuer validation —
+# verify_oauth2_token still enforces the certs-based signature check, the
+# `audience=` match, and (unconditionally, after verify_token returns) that
+# `iss` is one of Google's real issuers — clock_skew_in_seconds only widens
+# the iat/exp *time window*, and expiry is still strictly enforced past it.
+GOOGLE_CLOCK_SKEW_SECONDS = 10
+
+
 def verify_google_id_token(token: str) -> dict:
-    return id_token.verify_oauth2_token(token, _request, audience=GOOGLE_CLIENT_ID)
+    return id_token.verify_oauth2_token(
+        token, _request, audience=GOOGLE_CLIENT_ID, clock_skew_in_seconds=GOOGLE_CLOCK_SKEW_SECONDS
+    )
 
 
 def get_current_user(authorization: str = Header(None)) -> dict:

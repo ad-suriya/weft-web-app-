@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { GitBranch, Loader2, Sparkles, Check, X } from 'lucide-react';
 import { DecompositionPlan, Task, Urgency } from '../types';
+import { Card, Button, Textarea, EmptyState } from '../screens/ui';
 
 interface Props {
   onGenerate: (goal: string) => Promise<DecompositionPlan>;
   onCommit: (plan: DecompositionPlan) => Promise<Task[]>;
 }
 
-const PRIORITY_COLOR: Record<Urgency, string> = { HIGH: '#C2632F', MEDIUM: '#23271F', LOW: '#6B7280' };
+const PRIORITY_COLOR: Record<Urgency, string> = { HIGH: 'var(--color-danger)', MEDIUM: 'var(--color-ink)', LOW: 'var(--color-ink-faint)' };
 const PX_PER_HOUR = 28;
 
 // A block on the timeline: a stable key (the AI's draft id pre-commit, or
@@ -56,9 +57,9 @@ function Timeline({ blocks }: { blocks: TimelineBlock[] }) {
   return (
     <div className="overflow-x-auto">
       <div style={{ width: Math.max(480, (totalHours + 1) * PX_PER_HOUR) }}>
-        <div className="relative h-5 border-b border-[#23271F]/14 mb-2">
+        <div className="relative h-5 border-b border-ink/14 mb-2">
           {Array.from({ length: Math.ceil(totalHours) + 1 }, (_, h) => (
-            <span key={h} className="absolute top-0 font-sans text-[9px] opacity-40"
+            <span key={h} className="absolute top-0 font-sans text-[9px] text-ink-faint"
               style={{ left: h * PX_PER_HOUR }}>{h}h</span>
           ))}
         </div>
@@ -69,7 +70,7 @@ function Timeline({ blocks }: { blocks: TimelineBlock[] }) {
             return (
               <div key={b.key} className="relative h-9">
                 <div
-                  className="absolute h-9 text-white px-2.5 flex items-center text-[11px] font-sans font-bold truncate shadow-[0_3px_12px_rgba(35,39,31,0.10)]"
+                  className="absolute h-9 rounded-md text-inverse px-2.5 flex items-center text-[11px] font-sans font-semibold truncate shadow-card"
                   style={{
                     left: t.start * PX_PER_HOUR,
                     width: Math.max(b.hours * PX_PER_HOUR, 60),
@@ -141,18 +142,13 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 border-b border-[#23271F]/14 pb-2 mb-4">
-        <GitBranch className="w-4 h-4" />
-        <span className="font-sans text-[10px] uppercase tracking-wider font-semibold">Task Breakdown</span>
-        <div className="h-[1px] flex-grow bg-[#2C312A] opacity-20" />
-      </div>
-
-      <div className="bg-white border border-[#23271F]/14 p-4 mb-4 space-y-3 shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
-        <label className="font-sans text-[10px] uppercase font-bold tracking-wider block opacity-70">
+      {/* No section header — always inside a Collapsible titled "Break down
+          a goal" already. */}
+      <Card variant="secondary" className="p-4 mb-4 space-y-3">
+        <label className="font-sans text-[10px] uppercase font-semibold tracking-wider block text-ink-soft">
           Describe a big, vague goal — AI breaks it into concrete subtasks with dependencies
         </label>
-        <textarea
-          className="w-full p-2 border border-[#23271F]/18 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#2F7A64] resize-none"
+        <Textarea
           rows={2}
           placeholder="e.g. Build hackathon app in 3 days"
           value={goal}
@@ -160,20 +156,19 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
           disabled={generating}
         />
         <div className="flex justify-end">
-          <button onClick={generate} disabled={generating || !goal.trim()}
-            className="font-sans text-[11px] font-bold uppercase tracking-wider px-4 py-2 bg-[#2C312A] text-white hover:bg-[#3A3F37] disabled:opacity-40 flex items-center gap-2">
-            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+          <Button variant="primary" onClick={generate} disabled={generating || !goal.trim()} loading={generating}>
+            {!generating && <Sparkles className="w-3.5 h-3.5" />}
             Break It Down
-          </button>
+          </Button>
         </div>
-        {error && <p className="font-sans text-[11px] font-bold uppercase text-[#C2632F]">{error}</p>}
-      </div>
+        {error && <p className="font-sans text-[11px] font-semibold uppercase text-danger">{error}</p>}
+      </Card>
 
       {draft && !created && (
-        <div className="bg-[#F1F3EF] border border-[#23271F]/14 p-4 mb-4 space-y-4 shadow-[0_8px_22px_-8px_rgba(194,99,47,0.40)]">
+        <Card variant="informational" className="p-4 mb-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold tracking-tight truncate">{draft.goal}</h3>
-            <span className="font-sans text-[9px] font-bold px-2 py-1 bg-[#2C312A] text-white uppercase tracking-wider shrink-0">
+            <h3 className="font-serif text-lg font-semibold tracking-tight truncate">{draft.goal}</h3>
+            <span className="font-sans text-[9px] font-semibold px-2 py-1 rounded-full bg-surface-elevated text-inverse uppercase tracking-wider shrink-0">
               {draft.subtasks.length} subtasks
             </span>
           </div>
@@ -182,38 +177,36 @@ export default function DecomposePanel({ onGenerate, onCommit }: Props) {
 
           <div className="space-y-1.5">
             {draft.subtasks.map((s) => (
-              <div key={s.id} className="flex items-center gap-2 bg-white border border-[#23271F]/12 px-3 py-2">
+              <div key={s.id} className="flex items-center gap-2 bg-surface border border-ink/12 rounded-md px-3 py-2">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: PRIORITY_COLOR[s.priority] }} />
                 <span className="font-sans text-sm flex-grow truncate">{s.title}</span>
-                <span className="font-sans text-[9px] font-bold uppercase opacity-50 shrink-0">{s.priority} · {s.estimated_hours}h</span>
+                <span className="font-sans text-[9px] font-semibold uppercase text-ink-faint shrink-0">{s.priority} · {s.estimated_hours}h</span>
               </div>
             ))}
           </div>
 
           <div className="flex justify-end gap-2">
-            <button onClick={() => setDraft(null)} className="font-sans text-[10px] uppercase font-bold tracking-wider px-3 py-2 flex items-center gap-1">
+            <Button variant="ghost" onClick={() => setDraft(null)}>
               <X className="w-3 h-3" /> Discard
-            </button>
-            <button onClick={commit} disabled={committing} className="font-sans text-[10px] uppercase font-bold tracking-wider px-3 py-2 bg-[#2F7A64] text-white disabled:opacity-40 flex items-center gap-1">
-              {committing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Create Tasks
-            </button>
+            </Button>
+            <Button variant="primary" onClick={commit} disabled={committing} loading={committing}>
+              {!committing && <Check className="w-3 h-3" />} Create Tasks
+            </Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {created && (
-        <div className="bg-white border border-[#2F7A64] p-4 space-y-3 shadow-[0_8px_22px_-8px_rgba(47,122,100,0.35)]">
-          <p className="font-sans text-[11px] font-bold uppercase tracking-wider text-[#2F7A64]">
+        <Card variant="secondary" className="p-4 space-y-3 !border-accent">
+          <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-accent-strong">
             Created {created.length} task{created.length === 1 ? '' : 's'} — execution graph below
           </p>
           <Timeline blocks={createdBlocks} />
-        </div>
+        </Card>
       )}
 
       {!draft && !created && (
-        <div className="font-sans text-sm opacity-50 italic py-10 text-center border border-dashed border-[#23271F]/18">
-          Describe a goal above and AI will turn it into a concrete, dependency-ordered timeline.
-        </div>
+        <EmptyState icon={GitBranch} title="No breakdown yet" description="Describe a goal above and AI will turn it into a concrete, dependency-ordered timeline." />
       )}
     </div>
   );

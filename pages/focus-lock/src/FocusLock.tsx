@@ -41,6 +41,22 @@ const FocusLock: React.FC = () => {
     init();
   }, []);
 
+  // If blocking clears while the user is sitting on this exact interstitial
+  // (the session it belonged to ended — see background/index.ts's
+  // reconcileBlocking, or the popup's own Stop button), send them straight
+  // back to the page they were trying to reach instead of leaving them
+  // stranded here with no session left to ever unblock it.
+  useEffect(() => {
+    if (!blockedUrl) return;
+    const unsubscribe = blockingStorage.subscribe(() => {
+      const next = blockingStorage.getSnapshot();
+      if (next && !next.isActive) {
+        window.location.href = blockedUrl;
+      }
+    });
+    return unsubscribe;
+  }, [blockedUrl]);
+
   useEffect(() => {
     if (!session || !session.isActive) return;
 

@@ -506,11 +506,18 @@ def google_login() -> RedirectResponse:
 
 @app.get("/api/auth/google/callback")
 def google_callback(request: Request, code: str = "", state: str = "", error: str = "") -> RedirectResponse:
-    def fail(detail: str) -> RedirectResponse:
-        return RedirectResponse(f"{auth.FRONTEND_ORIGIN}/?auth_error={urllib.parse.quote(detail)}")
+    # `auth_error` is a stable, user-safe CODE, never the raw exception text —
+    # the actual detail (which for a ValueError out of verify_google_id_token
+    # could be something like "Token used too early, 1788611836 < 1788611837")
+    # is only ever printed server-side. LandingPage/App.tsx map the code to a
+    # friendly message; anything unrecognized falls back to a generic one.
+    def fail(code: str) -> RedirectResponse:
+        return RedirectResponse(f"{auth.FRONTEND_ORIGIN}/?auth_error={urllib.parse.quote(code)}")
 
     if error:
-        return fail(error)
+        # Google's own `error` param — "access_denied" (user hit Cancel) is
+        # the common case and worth its own copy; anything else is generic.
+        return fail(error if error == "access_denied" else "sign_in_failed")
     if not code or not state or state != request.cookies.get("oauth_state"):
         return fail("invalid_state")
 
@@ -519,7 +526,7 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
         claims = auth.verify_google_id_token(tokens["id_token"])
     except Exception as exc:  # noqa: BLE001
         print(f"OAuth callback failed: {exc!r}")
-        return fail(str(exc))
+        return fail("sign_in_failed")
 
     db.upsert_user(claims["sub"], email=claims.get("email", ""), name=claims.get("name", ""), picture=claims.get("picture"))
 

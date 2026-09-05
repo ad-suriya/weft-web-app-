@@ -1,7 +1,7 @@
 import React from 'react';
-import { Timer, CheckCircle2 } from 'lucide-react';
+import { Timer, CheckCircle2, Activity } from 'lucide-react';
 import { Session, Task } from '../types';
-import { CARD, ScreenHead, Eyebrow } from './ui';
+import { CARD, ScreenHead, Eyebrow, EmptyState } from './ui';
 import { fmtClock, dayLabel, fmtDuration } from './format';
 
 interface Props {
@@ -43,24 +43,22 @@ export default function ActivityScreen({ sessions, tasks }: Props) {
       </ScreenHead>
 
       {entries.length === 0 ? (
-        <div className={`${CARD} shadow-none border-dashed py-12 text-center font-sans text-sm text-[#8C9184] italic`}>
-          No sessions yet. Start a focus session from Today and it&apos;ll show up here.
-        </div>
+        <EmptyState icon={Activity} title="Nothing logged yet" description="Start a focus session from Today and it'll show up here." />
       ) : (
         <div className="flex flex-col gap-6">
           {groups.map(({ label, items }) => (
             <section key={label} className={`${CARD} p-5`}>
               <div className="flex items-center gap-3 mb-3">
                 <Eyebrow tone="ink">{label}</Eyebrow>
-                <div className="h-px flex-grow bg-[#23271F]/10" />
+                <div className="h-px flex-grow bg-ink/10" />
               </div>
               <div className="flex flex-col">
                 {items.map((e, i) => (
                   <div
                     key={i}
-                    className="grid grid-cols-[92px_1fr] gap-4 py-3.5 border-t border-[#23271F]/8 first:border-t-0"
+                    className="grid grid-cols-1 sm:grid-cols-[92px_1fr] gap-1.5 sm:gap-4 py-3.5 border-t border-ink/8 first:border-t-0"
                   >
-                    <span className="font-mono text-[11.5px] text-[#64695D] pt-0.5">
+                    <span className="font-mono text-[11.5px] text-ink-soft pt-0.5">
                       {e.kind === 'session'
                         ? `${fmtClock(e.session.start_time)}${e.session.end_time ? ` → ${fmtClock(e.session.end_time)}` : ' → now'}`
                         : fmtClock(e.task.updated_at)}
@@ -68,10 +66,10 @@ export default function ActivityScreen({ sessions, tasks }: Props) {
                     {e.kind === 'session' ? (
                       <div>
                         <span className="font-sans text-[12px] font-semibold uppercase tracking-wider flex items-center gap-2">
-                          <Timer className="w-3.5 h-3.5 text-[#2F7A64]" />
+                          <Timer className="w-3.5 h-3.5 text-accent" />
                           {e.session.description || 'Focus session'}
                         </span>
-                        <p className="font-sans text-[11.5px] text-[#64695D] mt-1">
+                        <p className="font-sans text-[11.5px] text-ink-soft mt-1">
                           {fmtDuration(e.session.duration_minutes)}
                           {e.session.is_paused && !e.session.end_time ? ' · paused' : ''}
                           {e.session.total_break_minutes > 0 ? ` · ${fmtDuration(e.session.total_break_minutes)} on break` : ''}
@@ -79,7 +77,7 @@ export default function ActivityScreen({ sessions, tasks }: Props) {
                       </div>
                     ) : (
                       <div>
-                        <span className="font-sans text-[12px] font-semibold uppercase tracking-wider flex items-center gap-2 text-[#245E4E]">
+                        <span className="font-sans text-[12px] font-semibold uppercase tracking-wider flex items-center gap-2 text-accent-strong">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           Completed
                         </span>

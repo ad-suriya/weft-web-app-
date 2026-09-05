@@ -1,4 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Button } from '../screens/ui';
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { DURATION } from '../lib/motion';
 
 interface Step {
   selector: string;
@@ -68,6 +72,7 @@ export default function GuidedTour({ onDismiss, onStepChange }: Props) {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
   const isLast = step === STEPS.length - 1;
+  const reduced = useReducedMotion();
 
   useEffect(() => {
     onStepChange?.(STEPS[step].selector);
@@ -129,39 +134,47 @@ export default function GuidedTour({ onDismiss, onStepChange }: Props) {
   return (
     <>
       {spotlight && (
-        <div
-          className="fixed z-[60] rounded-md pointer-events-none transition-all duration-200"
-          style={{
+        <motion.div
+          className="fixed z-[60] rounded-md pointer-events-none"
+          animate={{
             top: spotlight.top, left: spotlight.left, width: spotlight.width, height: spotlight.height,
-            boxShadow: '0 0 0 9999px rgba(26,26,26,0.55)',
+            boxShadow: '0 0 0 9999px rgba(35,39,31,0.55)',
           }}
+          transition={{ duration: reduced ? 0 : 0.25, ease: [0.4, 0, 0.2, 1] }}
         />
       )}
-      <div className="fixed z-[61] bg-white border-2 border-[#23271F]/14 shadow-[0_16px_40px_-14px_rgba(35,39,31,0.24)] p-5 space-y-3 font-sans"
-        style={tooltipStyle}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold italic font-serif">{STEPS[step].title}</h3>
-          <span className="text-[10px] uppercase font-bold opacity-40">{step + 1}/{STEPS.length}</span>
-        </div>
-        <p className="text-xs leading-relaxed opacity-80">{STEPS[step].body}</p>
-        <div className="flex justify-between items-center gap-3 pt-1">
-          <button onClick={onDismiss} className="text-[10px] uppercase font-bold tracking-wider opacity-50 hover:opacity-100 transition-opacity">
-            Skip
-          </button>
-          <div className="flex gap-2">
-            {step > 0 && (
-              <button onClick={() => setStep((s) => s - 1)}
-                className="px-3 py-1.5 border border-[#23271F]/14 text-[10px] font-bold uppercase tracking-wider hover:bg-[#2C312A] hover:text-white transition-colors">
-                Back
-              </button>
-            )}
-            <button onClick={() => (isLast ? onDismiss() : setStep((s) => s + 1))}
-              className="px-3 py-1.5 bg-[#2C312A] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-[#3A3F37] transition-colors">
-              {isLast ? 'Done' : 'Next'}
-            </button>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={step}
+          initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
+          transition={{ duration: DURATION.base }}
+          className="fixed z-[61] bg-surface rounded-lg border border-ink/14 shadow-popover p-5 space-y-3 font-sans"
+          style={tooltipStyle}
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold italic font-serif">{STEPS[step].title}</h3>
+            <span className="text-[10px] uppercase font-semibold text-ink-faint">{step + 1}/{STEPS.length}</span>
           </div>
-        </div>
-      </div>
+          <p className="text-xs leading-relaxed text-ink-soft">{STEPS[step].body}</p>
+          <div className="flex justify-between items-center gap-3 pt-1">
+            <button onClick={onDismiss} className="text-[10px] uppercase font-semibold tracking-wider text-ink-faint hover:text-ink transition-colors">
+              Skip
+            </button>
+            <div className="flex gap-2">
+              {step > 0 && (
+                <Button size="sm" onClick={() => setStep((s) => s - 1)}>
+                  Back
+                </Button>
+              )}
+              <Button size="sm" variant="primary" onClick={() => (isLast ? onDismiss() : setStep((s) => s + 1))}>
+                {isLast ? 'Done' : 'Next'}
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </AnimatePresence>
     </>
   );
 }

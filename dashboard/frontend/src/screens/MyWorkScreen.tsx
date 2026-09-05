@@ -1,13 +1,13 @@
 import React from 'react';
 import {
-  Plus, CalendarDays, Loader2, Crosshair, Check, SkipForward, Trash2, Download, CalendarPlus,
+  Plus, CalendarDays, Crosshair, Check, SkipForward, Trash2, Download, CalendarPlus, ListChecks,
 } from 'lucide-react';
 import { DecompositionPlan, Goal, Habit, Task, TaskRisk, Urgency } from '../types';
 import { api } from '../api';
 import GoalsPanel from '../components/GoalsPanel';
 import HabitsPanel from '../components/HabitsPanel';
 import DecomposePanel from '../components/DecomposePanel';
-import { CARD, BTN, BTN_GO, BTN_SM, ScreenHead, SectionRule, Pill, Meter, Collapsible } from './ui';
+import { CARD, BTN_SM, ScreenHead, SectionRule, Pill, Meter, Collapsible, Button, Card, Input, EmptyState } from './ui';
 import { fmtDeadline, fmtDuration, relTime } from './format';
 
 interface NewTaskDraft {
@@ -85,19 +85,18 @@ export default function MyWorkScreen({
       </ScreenHead>
 
       <div className="flex items-center gap-3 flex-wrap" data-tour="task-toolbar">
-        <button onClick={() => setShowAdd((s) => !s)} className={BTN}>
+        <Button onClick={() => setShowAdd((s) => !s)}>
           <Plus className="w-3.5 h-3.5" /> Add task
-        </button>
-        <button onClick={onPlanDay} disabled={busy !== '' || tasks.length === 0} className={BTN_GO}>
-          {busy === 'schedule' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarDays className="w-3.5 h-3.5" />}
+        </Button>
+        <Button variant="primary" onClick={onPlanDay} disabled={busy !== '' || tasks.length === 0} loading={busy === 'schedule'}>
+          {busy !== 'schedule' && <CalendarDays className="w-3.5 h-3.5" />}
           Plan my day
-        </button>
+        </Button>
       </div>
 
       {showAdd && (
-        <div className={`${CARD} p-4 space-y-3`}>
-          <input
-            className="w-full p-2.5 rounded-[8px] border border-[#23271F]/18 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#2F7A64]"
+        <Card variant="secondary" className="p-4 space-y-3">
+          <Input
             placeholder="Task name"
             value={newTask.task_name}
             onChange={(e) => setNewTask({ ...newTask, task_name: e.target.value })}
@@ -105,20 +104,19 @@ export default function MyWorkScreen({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <label className="font-sans text-[10px] uppercase font-semibold tracking-wider flex flex-col gap-1">
               Deadline
-              <input
+              <Input
                 type="datetime-local"
-                className="p-2 rounded-[8px] border border-[#23271F]/18 font-sans text-xs normal-case"
+                className="normal-case"
                 value={newTask.deadline}
                 onChange={(e) => setNewTask({ ...newTask, deadline: e.target.value })}
               />
             </label>
             <label className="font-sans text-[10px] uppercase font-semibold tracking-wider flex flex-col gap-1">
               Est. minutes
-              <input
+              <Input
                 type="number"
                 min={5}
                 step={5}
-                className="p-2 rounded-[8px] border border-[#23271F]/18 font-sans text-xs"
                 value={newTask.estimated_minutes}
                 onChange={(e) => setNewTask({ ...newTask, estimated_minutes: Number(e.target.value) })}
               />
@@ -126,7 +124,7 @@ export default function MyWorkScreen({
             <label className="font-sans text-[10px] uppercase font-semibold tracking-wider flex flex-col gap-1">
               Urgency
               <select
-                className="p-2 rounded-[8px] border border-[#23271F]/18 font-sans text-xs"
+                className="p-2.5 rounded-md border border-ink/18 bg-surface font-sans text-xs focus:outline-none focus:ring-1 focus:ring-accent"
                 value={newTask.urgency}
                 onChange={(e) => setNewTask({ ...newTask, urgency: e.target.value as Urgency })}
               >
@@ -140,7 +138,7 @@ export default function MyWorkScreen({
             <label className="font-sans text-[10px] uppercase font-semibold tracking-wider flex flex-col gap-1">
               Link to goal (optional)
               <select
-                className="p-2 rounded-[8px] border border-[#23271F]/18 font-sans text-xs normal-case"
+                className="p-2.5 rounded-md border border-ink/18 bg-surface font-sans text-xs normal-case focus:outline-none focus:ring-1 focus:ring-accent"
                 value={newTask.goal_id}
                 onChange={(e) => setNewTask({ ...newTask, goal_id: e.target.value })}
               >
@@ -152,16 +150,14 @@ export default function MyWorkScreen({
             </label>
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={() => setShowAdd(false)} className={BTN}>Cancel</button>
-            <button onClick={onAddTask} disabled={!newTask.task_name.trim()} className={BTN_GO}>Add task</button>
+            <Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button variant="primary" onClick={onAddTask} disabled={!newTask.task_name.trim()}>Add task</Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {tasks.length === 0 ? (
-        <div className={`${CARD} shadow-none border-dashed py-12 text-center font-sans text-sm text-[#8C9184] italic`}>
-          Your work shows up here once you tell chat what&apos;s on your plate — or add one above.
-        </div>
+        <EmptyState icon={ListChecks} title="Nothing on your plate yet" description="Your work shows up here once you tell chat what's on your plate — or add one above." />
       ) : (
         <SectionRule>{tasks.length} item{tasks.length === 1 ? '' : 's'}</SectionRule>
       )}
@@ -174,7 +170,7 @@ export default function MyWorkScreen({
           const pct = est > 0 ? (logged / est) * 100 : t.status === 'COMPLETED' ? 100 : 0;
           const isDone = t.status === 'COMPLETED';
           return (
-            <div key={t.id} className={`${CARD} p-4 ${isDone ? 'opacity-60' : ''}`}>
+            <Card key={t.id} variant="secondary" className={`p-4 ${isDone ? 'opacity-60' : ''}`}>
               <div className="flex items-start gap-4 flex-wrap">
                 <div className="min-w-0 flex-grow">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -188,7 +184,7 @@ export default function MyWorkScreen({
                       </Pill>
                     )}
                   </div>
-                  <p className="font-sans text-[11px] text-[#64695D] mt-1">
+                  <p className="font-sans text-[11px] text-ink-soft mt-1">
                     {t.next_micro_step ? `Next: ${t.next_micro_step}` : `~${fmtDuration(est)} of work`}
                     {' · '}updated {relTime(t.updated_at)}
                     {t.deadline ? ` · due ${fmtDeadline(t.deadline)}` : ''}
@@ -199,11 +195,11 @@ export default function MyWorkScreen({
 
               <Meter value={pct} className="mt-3" />
               <div className="flex items-center justify-between mt-1.5">
-                <span className="font-sans text-[10px] text-[#8C9184]">
+                <span className="font-sans text-[10px] text-ink-faint">
                   {fmtDuration(logged)} / {fmtDuration(est)}
                 </span>
                 {!isDone && (
-                  <label className="font-sans text-[9px] uppercase tracking-wide text-[#8C9184] flex items-center gap-1">
+                  <label className="font-sans text-[9px] uppercase tracking-wide text-ink-faint flex items-center gap-1">
                     Logged
                     <input
                       key={`${t.id}-${t.completed_minutes ?? 0}`}
@@ -215,7 +211,7 @@ export default function MyWorkScreen({
                         const h = Number(e.target.value);
                         if (!Number.isNaN(h)) onLogHours(t, h);
                       }}
-                      className="w-14 p-1 rounded-[6px] border border-[#23271F]/18 font-sans text-[11px] normal-case"
+                      className="w-14 p-1 rounded-sm border border-ink/18 bg-surface font-sans text-[11px] normal-case focus:outline-none focus:ring-1 focus:ring-accent"
                     />
                     h
                   </label>
@@ -230,7 +226,7 @@ export default function MyWorkScreen({
                   <button
                     onClick={() => onStartFocus(t)}
                     disabled={t.status === 'IN_PROGRESS'}
-                    className="inline-flex items-center gap-1.5 font-sans text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1.5 rounded-[8px] border border-[#C2632F] text-[#C2632F] hover:bg-[#C2632F] hover:text-white transition-colors disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 font-sans text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1.5 rounded-sm border border-danger text-danger hover:bg-danger hover:text-inverse transition-colors disabled:opacity-40"
                   >
                     <Crosshair className="w-3 h-3" /> Focus
                   </button>
@@ -254,12 +250,12 @@ export default function MyWorkScreen({
                 <button
                   onClick={() => onRemove(t.id)}
                   title="Delete"
-                  className="ml-auto inline-flex items-center px-2 py-1.5 rounded-[8px] border border-[#23271F]/18 text-[#8C9184] hover:border-[#C2632F] hover:text-[#C2632F] transition-colors"
+                  className="ml-auto inline-flex items-center px-2 py-1.5 rounded-sm border border-ink/18 text-ink-faint hover:border-danger hover:text-danger transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-            </div>
+            </Card>
           );
         })}
       </div>

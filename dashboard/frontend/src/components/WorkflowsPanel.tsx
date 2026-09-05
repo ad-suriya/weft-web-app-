@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Workflow as WorkflowIcon, Loader2, Play, Trash2, Sparkles, Check, X } from 'lucide-react';
+import { Workflow as WorkflowIcon, Play, Trash2, Sparkles, Check, X } from 'lucide-react';
 import { Workflow, WorkflowPlan } from '../types';
+import { Card, Button, Textarea, EmptyState, ScreenHead } from '../screens/ui';
 
 interface Props {
   workflows: Workflow[];
@@ -53,20 +54,18 @@ export default function WorkflowsPanel({ workflows, onGenerate, onSave, onToggle
   };
 
   return (
-    <div>
-      <div className="flex items-center gap-3 border-b border-[#23271F]/14 pb-2 mb-4">
-        <WorkflowIcon className="w-4 h-4" />
-        <span className="font-sans text-[10px] uppercase tracking-wider font-semibold">Workflows</span>
-        <div className="h-[1px] flex-grow bg-[#2C312A] opacity-20" />
-      </div>
+    <div className="flex flex-col gap-5">
+      <ScreenHead title="Workflows">
+        Describe a recurring procedure once and AI turns it into an automated workflow that keeps creating those
+        tasks for you.
+      </ScreenHead>
 
       {/* SOP -> workflow generator */}
-      <div className="bg-white border border-[#23271F]/14 p-4 mb-4 space-y-3 shadow-[0_4px_16px_rgba(35,39,31,0.06)]">
-        <label className="font-sans text-[10px] uppercase font-bold tracking-wider block opacity-70">
+      <Card variant="secondary" className="p-4 mb-4 space-y-3">
+        <label className="font-sans text-[10px] uppercase font-semibold tracking-wider block text-ink-soft">
           Describe a procedure (SOP) — AI turns it into an automated workflow
         </label>
-        <textarea
-          className="w-full p-2 border border-[#23271F]/18 font-sans text-sm focus:outline-none focus:ring-1 focus:ring-[#2F7A64] resize-none"
+        <Textarea
           rows={3}
           placeholder="e.g. Every Monday, create tasks to review last week's goals and plan this week's top 3 priorities."
           value={sopText}
@@ -74,79 +73,80 @@ export default function WorkflowsPanel({ workflows, onGenerate, onSave, onToggle
           disabled={generating}
         />
         <div className="flex justify-end">
-          <button onClick={generate} disabled={generating || !sopText.trim()}
-            className="font-sans text-[11px] font-bold uppercase tracking-wider px-4 py-2 bg-[#2C312A] text-white hover:bg-[#3A3F37] disabled:opacity-40 flex items-center gap-2">
-            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+          <Button variant="primary" onClick={generate} disabled={generating || !sopText.trim()} loading={generating}>
+            {!generating && <Sparkles className="w-3.5 h-3.5" />}
             Generate Workflow
-          </button>
+          </Button>
         </div>
-        {error && <p className="font-sans text-[11px] font-bold uppercase text-[#C2632F]">{error}</p>}
-      </div>
+        {error && <p className="font-sans text-[11px] font-semibold uppercase text-danger">{error}</p>}
+      </Card>
 
       {/* Draft review */}
       {draft && (
-        <div className="bg-[#F1F3EF] border border-[#23271F]/14 p-4 mb-4 space-y-3 shadow-[0_8px_22px_-8px_rgba(194,99,47,0.40)]">
+        <Card variant="informational" className="p-4 mb-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold tracking-tight">{draft.name}</h3>
-            <span className="font-sans text-[9px] font-bold px-2 py-1 bg-[#2C312A] text-white uppercase tracking-wider">
+            <h3 className="font-serif text-lg font-semibold tracking-tight">{draft.name}</h3>
+            <span className="font-sans text-[9px] font-semibold px-2 py-1 rounded-full bg-surface-elevated text-inverse uppercase tracking-wider">
               {TRIGGER_LABEL[draft.trigger_type] || draft.trigger_type}
             </span>
           </div>
           {draft.trigger_type === 'ON_TASK_COMPLETE' && (
-            <p className="font-sans text-xs opacity-70">Watches for tasks matching: <strong>{draft.trigger_match}</strong></p>
+            <p className="font-sans text-xs text-ink-soft">Watches for tasks matching: <strong>{draft.trigger_match}</strong></p>
           )}
           <div className="space-y-1.5">
             {draft.steps.map((s, i) => (
-              <div key={i} className="flex items-center gap-2 bg-white border border-[#23271F]/12 px-3 py-2">
-                <span className="font-sans text-[10px] font-bold opacity-40">{i + 1}</span>
+              <div key={i} className="flex items-center gap-2 bg-surface border border-ink/12 rounded-md px-3 py-2">
+                <span className="font-sans text-[10px] font-semibold text-ink-faint">{i + 1}</span>
                 <span className="font-sans text-sm flex-grow truncate">{s.task_name}</span>
-                <span className="font-sans text-[9px] font-bold uppercase opacity-50">{s.urgency} · {s.estimated_minutes}m</span>
+                <span className="font-sans text-[9px] font-semibold uppercase text-ink-faint">{s.urgency} · {s.estimated_minutes}m</span>
               </div>
             ))}
           </div>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setDraft(null)} className="font-sans text-[10px] uppercase font-bold tracking-wider px-3 py-2 flex items-center gap-1">
+            <Button variant="ghost" onClick={() => setDraft(null)}>
               <X className="w-3 h-3" /> Discard
-            </button>
-            <button onClick={save} disabled={saving} className="font-sans text-[10px] uppercase font-bold tracking-wider px-3 py-2 bg-[#2F7A64] text-white disabled:opacity-40 flex items-center gap-1">
-              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save Workflow
-            </button>
+            </Button>
+            <Button variant="primary" onClick={save} disabled={saving} loading={saving}>
+              {!saving && <Check className="w-3 h-3" />} Save Workflow
+            </Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Saved workflows */}
       {workflows.length === 0 ? (
-        <div className="font-sans text-sm opacity-50 italic py-10 text-center border border-dashed border-[#23271F]/18">
-          No workflows yet. Describe a procedure above and AI will build one.
-        </div>
+        <EmptyState icon={WorkflowIcon} title="No workflows yet" description="Describe a procedure above and AI will build one." />
       ) : (
         <div className="space-y-3">
           {workflows.map((w) => (
-            <div key={w.id} className={`bg-white border border-[#23271F]/14 p-4 shadow-[0_4px_16px_rgba(35,39,31,0.06)] ${w.active ? '' : 'opacity-50'}`}>
+            <Card key={w.id} variant="secondary" className={`p-4 ${w.active ? '' : 'opacity-50'}`}>
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <h3 className="text-lg font-bold tracking-tight leading-tight">{w.name}</h3>
-                  <span className="font-sans text-[9px] uppercase font-bold opacity-50">{TRIGGER_LABEL[w.trigger_type] || w.trigger_type}</span>
+                  <h3 className="font-serif text-lg font-semibold tracking-tight leading-tight">{w.name}</h3>
+                  <span className="font-sans text-[9px] uppercase font-semibold text-ink-faint">{TRIGGER_LABEL[w.trigger_type] || w.trigger_type}</span>
                 </div>
-                <label className="flex items-center gap-1.5 font-sans text-[9px] uppercase font-bold tracking-wider cursor-pointer shrink-0">
+                <label className="flex items-center gap-1.5 font-sans text-[9px] uppercase font-semibold tracking-wider cursor-pointer shrink-0">
                   <input type="checkbox" checked={w.active} onChange={(e) => onToggleActive(w.id, e.target.checked)} />
                   Active
                 </label>
               </div>
               <div className="space-y-1 mb-3">
                 {w.steps.map((s, i) => (
-                  <p key={i} className="font-sans text-xs opacity-70 truncate">• {s.task_name}</p>
+                  <p key={i} className="font-sans text-xs text-ink-soft truncate">• {s.task_name}</p>
                 ))}
               </div>
               <div className="flex items-center justify-between">
-                <span className="font-sans text-[10px] uppercase tracking-wide opacity-50">{fmtLastRun(w.last_run)}</span>
+                <span className="font-sans text-[10px] uppercase tracking-wide text-ink-faint">{fmtLastRun(w.last_run)}</span>
                 <div className="flex gap-1">
-                  <button onClick={() => onRun(w.id)} title="Run now" className="p-1.5 border border-[#23271F]/14 hover:bg-[#2C312A] hover:text-white transition-colors"><Play className="w-3 h-3" /></button>
-                  <button onClick={() => onDelete(w.id)} title="Delete" className="p-1.5 border border-[#23271F]/18 hover:border-[#C2632F] hover:text-[#C2632F] transition-colors"><Trash2 className="w-3 h-3" /></button>
+                  <button onClick={() => onRun(w.id)} title="Run now" className="p-1.5 rounded-sm border border-ink/14 hover:bg-accent/10 hover:text-accent-strong transition-colors">
+                    <Play className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => onDelete(w.id)} title="Delete" className="p-1.5 rounded-sm border border-ink/18 hover:border-danger hover:text-danger transition-colors">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
