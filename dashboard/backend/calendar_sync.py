@@ -30,6 +30,13 @@ FREEBUSY_URI = "https://www.googleapis.com/calendar/v3/freeBusy"
 SOURCE_TAG = "task-weave"
 
 
+class CalendarAuthRevoked(Exception):
+    """The stored refresh token no longer works (revoked, expired, or the
+    account's Calendar access was pulled) — Google says so explicitly via
+    `invalid_grant`, distinct from a transient network/API failure. Callers
+    should treat this as "the connection is dead," not "try again later"."""
+
+
 def configured() -> bool:
     return bool(CLIENT_SECRET)
 
@@ -41,6 +48,13 @@ def _refresh(refresh_token: str) -> dict:
         "client_secret": CLIENT_SECRET,
         "grant_type": "refresh_token",
     }, timeout=10)
+    if resp.status_code == 400:
+        try:
+            error = resp.json().get("error")
+        except ValueError:
+            error = None
+        if error == "invalid_grant":
+            raise CalendarAuthRevoked(error)
     resp.raise_for_status()
     data = resp.json()
     return {"access_token": data["access_token"], "expires_at": time.time() + data.get("expires_in", 3600)}
@@ -50,7 +64,10 @@ def get_access_token(account: dict, on_refresh=None) -> Optional[str]:
     """Return a valid access token for the stored account, refreshing if needed.
 
     `on_refresh(access_token, expires_at)` is called so the caller can persist
-    the new token; refresh tokens themselves don't expire on their own.
+    the new token; refresh tokens themselves don't expire on their own, but
+    can be revoked — that case raises CalendarAuthRevoked instead of
+    returning None, so callers can tell "dead connection" apart from
+    "transient failure, try again later".
     """
     if not account or not account.get("refresh_token"):
         return None
@@ -58,6 +75,8 @@ def get_access_token(account: dict, on_refresh=None) -> Optional[str]:
         return account["access_token"]
     try:
         refreshed = _refresh(account["refresh_token"])
+    except CalendarAuthRevoked:
+        raise
     except requests.RequestException:
         return None
     if on_refresh:

@@ -327,12 +327,20 @@ def regen_reminders(user_id: str) -> None:
 
 
 def _calendar_access_token(user_id: str) -> Optional[str]:
-    """Fetch a usable Calendar API access token for the user, if they've connected one."""
+    """Fetch a usable Calendar API access token for the user, if they've connected one.
+
+    If Google reports the refresh token itself is dead (revoked/expired), the
+    stale calendar_accounts record is deleted so /api/calendar/status stops
+    lying about being connected and the frontend can prompt to reconnect."""
     account = db.get_calendar_account(user_id)
     if not account:
         return None
-    return calendar_sync.get_access_token(
-        account, on_refresh=lambda token, expires_at: db.update_calendar_access_token(user_id, token, expires_at))
+    try:
+        return calendar_sync.get_access_token(
+            account, on_refresh=lambda token, expires_at: db.update_calendar_access_token(user_id, token, expires_at))
+    except calendar_sync.CalendarAuthRevoked:
+        db.delete_calendar_account(user_id)
+        return None
 
 
 def _apply_task_to_calendar(user_id: str, task: dict, token: str, tz: str) -> None:
@@ -859,7 +867,13 @@ def skip_task(task_id: int, user: dict = Depends(get_current_user)) -> dict:
 # --- Google Calendar sync (two-way) -------------------------------------------
 @app.get("/api/calendar/status")
 def calendar_status(user: dict = Depends(get_current_user)) -> dict:
-    return {"connected": db.get_calendar_account(user["id"]) is not None}
+    """Reports whether Calendar sync will actually work right now, not just
+    whether a record was ever saved — a revoked/expired refresh token gets
+    cleaned up here (via _calendar_access_token) so a stale record can't keep
+    reporting connected: true forever."""
+    if not db.get_calendar_account(user["id"]):
+        return {"connected": False}
+    return {"connected": _calendar_access_token(user["id"]) is not None}
 
 
 @app.post("/api/calendar/disconnect")
