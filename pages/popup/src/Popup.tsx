@@ -411,7 +411,7 @@ function Popup() {
       {/* Branding */}
       <div className="flex items-center gap-2">
         <img src={chrome.runtime.getURL('icon-128.png')} alt="" className="h-5 w-5" />
-        <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">Task Weave</span>
+        <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">WEFT</span>
       </div>
 
       {/* Time Totals */}

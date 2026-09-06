@@ -144,7 +144,7 @@ function TaskCaptureContent() {
               Capture Task
             </h1>
             <p className={cn('mt-2 text-xs uppercase tracking-widest', isLight ? 'text-ink/60' : 'text-paper/60')}>
-              Save to your Task Weave task list
+              Save to your WEFT task list
             </p>
           </div>
 

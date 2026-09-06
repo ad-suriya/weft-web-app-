@@ -14,7 +14,7 @@ const FEATURES: Feature[] = [
     icon: '📥',
     title: 'Capture a task from anywhere',
     body:
-      'Right-click any page (or a text selection) and choose "Add to Task Weave," or press ' +
+      'Right-click any page (or a text selection) and choose "Add to WEFT," or press ' +
       '⌘/Ctrl+Shift+Y. It grabs the title, the URL, and anything you had highlighted.',
   },
   {
@@ -44,7 +44,7 @@ const FEATURES: Feature[] = [
     icon: '🔄',
     title: 'Everything syncs',
     body:
-      'Same login as your Task Weave dashboard — tasks, focus sessions, and logged time all show up ' +
+      'Same login as your WEFT dashboard — tasks, focus sessions, and logged time all show up ' +
       'there immediately, no separate account or export step.',
   },
 ];
@@ -59,7 +59,7 @@ const Options = () => {
         <div>
           <img src={chrome.runtime.getURL('icon-128.png')} alt="" className="h-10 w-10 mb-2" />
           <p className={cn('text-[10px] uppercase tracking-widest font-bold', isLight ? 'text-ink/60' : 'text-paper/60')}>
-            Task Weave
+            WEFT
           </p>
           <h1 className="font-serif italic font-black text-3xl leading-tight">
             Remember.
@@ -67,7 +67,7 @@ const Options = () => {
             Connect. Execute.
           </h1>
           <p className={cn('mt-2 text-sm', isLight ? 'text-ink/70' : 'text-paper/70')}>
-            This extension is how Task Weave reaches you outside the dashboard — capturing what's in front of
+            This extension is how WEFT reaches you outside the dashboard — capturing what's in front of
             you and keeping you on it. Here's everything it does.
           </p>
         </div>

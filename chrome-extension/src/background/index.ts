@@ -21,7 +21,7 @@ const CAPTURE_MENU_ID = 'task-weave-capture';
 chrome.runtime.onInstalled.addListener(details => {
   chrome.contextMenus.create({
     id: CAPTURE_MENU_ID,
-    title: 'Add to Task Weave',
+    title: 'Add to WEFT',
     contexts: ['page', 'selection', 'link'],
   });
 

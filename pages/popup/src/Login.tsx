@@ -131,7 +131,7 @@ export const Login: React.FC<LoginProps> = ({ isLight, onLoginSuccess: _onLoginS
     >
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center">
-          <h1 className="font-serif italic font-black text-3xl">Task Weave</h1>
+          <h1 className="font-serif italic font-black text-3xl">WEFT</h1>
           <p className="mt-2 text-xs uppercase tracking-widest opacity-60">Stay focused. Get more done.</p>
         </div>
 
@@ -197,9 +197,9 @@ export const Login: React.FC<LoginProps> = ({ isLight, onLoginSuccess: _onLoginS
                 transition={revealTransition}
                 className="text-center space-y-2 border-t pt-3 border-current/10"
               >
-                <p className="text-xs">You're not signed into Task Weave yet.</p>
+                <p className="text-xs">You're not signed into WEFT yet.</p>
                 <button onClick={handleOpenDashboard} className="text-xs font-bold uppercase tracking-widest underline text-planning">
-                  Open Task Weave Dashboard
+                  Open WEFT Dashboard
                 </button>
               </motion.div>
             )}

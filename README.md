@@ -1,151 +1,196 @@
-# Vibe2Ship
+# WEFT — Workflow Execution & Focus Thread
 
-A comprehensive Chrome extension for managing tasks, habits, goals, and focus sessions with a companion dashboard.
+**One Goal. Every Device. One Continuous Workflow.**
+
+Cross-device work execution that remembers where you stopped. WEFT turns an
+intention into a workflow that can be paused on one device and resumed — at the
+exact step, with its context — on another.
 
 > **Built on** [chrome-extension-boilerplate-react-vite](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite) by Seo Jong Hak
 
-## Features
+## The problem
 
-- **Task Capture**: Quickly capture tasks directly from any webpage
-- **Focus Lock**: Block distracting websites during focus sessions
-- **Dashboard**: Full-featured web dashboard for managing your productivity
-- **Habit Tracking**: Track daily habits and routines
-- **Goal Management**: Set and monitor your goals
-- **Time Tracking**: Monitor focus sessions and productivity
-- **Sync Storage**: Synchronized storage across all extension pages
-- **Google Sign-In**: Authenticate via Google OAuth (`dashboard/backend/auth.py`)
-- **Google Calendar Sync** *(planned)*: two-way sync between the AI-generated time-blocked schedule and the user's Google Calendar — avoid conflicts when scheduling focus blocks, and surface planned blocks/deadlines on the user's calendar
+- Constant interruptions break the flow of work.
+- Lost context forces you to reconstruct what you were doing.
+- Re-seating takes time — finding the task, files, tabs, and next step again.
+
+Planners don't block. Blockers don't plan. WEFT does both, and it resumes your
+exact work state.
+
+## The idea: WEFT Work State
+
+```
+Goal → Workflow → Work → Context → State → Resume ↺
+```
+
+You describe a goal in one line. WEFT produces an ordered, trackable workflow,
+runs a focused work session against it, captures the context you touch (pages,
+references, notes), and persists all of it as **work state** so any surface can
+pick up exactly where the last one left off.
+
+## Surfaces
+
+WEFT is one workflow across three connected surfaces, all syncing through the
+shared work state:
+
+| Surface | Role | Where |
+| --- | --- | --- |
+| **Android app** | Capture · Control · Resume — quick capture, app blocking, one-tap Do Not Disturb, resume | separate repo |
+| **Laptop dashboard** | Execute · Work — command center for planning, focus sessions, and progress | `dashboard/` (this repo) |
+| **Browser extension** | Context · Evidence — capture tasks/references from webpages, stay focused, sync state | `chrome-extension/` + `pages/` (this repo) |
+
+**This repository contains the web dashboard and the browser extension.** The
+Android app ships from its own repo.
+
+## Feature summary
+
+- **AI-generated workflow** — a one-line goal becomes an ordered set of concrete,
+  trackable steps.
+- **Deterministic scheduling** — time-blocked plans with autonomous rescheduling.
+- **Distraction / app blocking** — during a focus session, distracting sites are
+  blocked and interrupt attempts are caught.
+- **Cross-device sync** — tasks, sessions, context, and progress live in one
+  shared work state.
+- **Resume exact work state** — continue at the step you left, with its context.
 
 ## Tech Stack
 
-- **Frontend**: React + TypeScript + Vite
-- **Backend**: Python FastAPI
-- **Extension**: Chrome Extension Manifest V3
-- **Styling**: Tailwind CSS
-- **Package Manager**: pnpm
+- **Extension**: Chrome Extension Manifest V3, React 19 + TypeScript + Vite, Turbo
+  monorepo, Tailwind CSS, pnpm
+- **Dashboard frontend**: React 19 + TypeScript + Vite + Tailwind CSS
+- **Dashboard backend**: Python FastAPI ("WEFT Engine"), Gemini (via Vertex AI)
+  for the workflow / scheduling engine, Firestore for storage (falls back to an
+  in-memory mock)
+- **Auth**: Google OAuth sign-in, plus one-click HMAC-signed guest sessions
 
 ## Project Structure
 
 ```
-├── chrome-extension/       # Extension core and configuration
-├── pages/                  # Individual extension UI pages
-│   ├── popup/             # Extension popup
-│   ├── side-panel/        # Side panel UI
-│   ├── focus-lock/        # Focus blocking page
-│   ├── task-capture/      # Task capture UI
-│   └── ...
-├── packages/              # Shared packages
-│   ├── types/            # Shared TypeScript types
-│   ├── storage/          # Storage layer
-│   ├── messaging/        # Extension messaging
-│   └── ui/               # Shared UI components
-├── dashboard/             # Web dashboard
-│   ├── frontend/         # React dashboard UI
-│   └── backend/          # Python FastAPI backend
-├── scripts/              # Build / env helper scripts
-└── docs/                 # Project documentation
+├── chrome-extension/       # Extension core, manifest, background script
+├── pages/                  # Individual extension UI surfaces
+│   ├── popup/              # Extension popup
+│   ├── side-panel/         # Side panel UI
+│   ├── focus-lock/         # Focus blocking / interrupt page
+│   ├── task-capture/       # Context-aware capture UI
+│   ├── new-tab/ options/ content*/ devtools*/
+├── packages/               # Shared workspace packages
+│   ├── types/ storage/ messaging/ ui/ i18n/ shared/ …
+├── dashboard/
+│   ├── frontend/           # React dashboard UI
+│   └── backend/            # FastAPI backend ("WEFT Engine")
+├── scripts/                # Build / env helper scripts
+└── docs/                   # JUDGES.html, privacy notes
 ```
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ and pnpm
+- Node.js **22.15.1+** and pnpm 10
 - Python 3.10+
-- Chrome or Chromium browser
+- Chrome or Chromium
 
-### Installation
+### Browser extension
 
-1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/vibe2ship.git
-cd vibe2ship
+git clone https://github.com/ad-suriya/Vibe2Ship.git
+cd Vibe2Ship
+pnpm install          # also creates the root .env (build flags, no secrets)
+pnpm build            # production build → dist/
 ```
 
-2. Install dependencies
-```bash
-pnpm install
-```
+Load it in Chrome:
 
-3. Set up environment variables
+1. Open `chrome://extensions/`
+2. Enable **Developer mode**
+3. Click **Load unpacked** and select the `dist` folder
 
-   The root `.env` (extension build flags, no secrets) is created automatically
-   by `pnpm install`. For the dashboard backend, copy the template and fill it in:
+For development with HMR, run `pnpm dev` instead of `pnpm build`, then load `dist`.
+
+### Dashboard backend
+
 ```bash
 cp dashboard/backend/.env.example dashboard/backend/.env
-```
+# fill in the two lines marked >>> FILL IN <<< and set up credentials
+# (see the comments in .env.example)
 
-4. Build the extension
-```bash
-pnpm build
-```
-
-### Development
-
-1. Start the development build with HMR:
-```bash
-pnpm dev
-```
-
-2. Load the extension in Chrome:
-   - Open `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `dist` folder
-
-3. For the dashboard backend:
-```bash
 cd dashboard/backend
 pip install -r requirements.txt
-python main.py
+python main.py        # serves on http://localhost:8000
 ```
 
-4. For the dashboard frontend:
+Without Firestore credentials the backend automatically uses an in-memory mock
+(`db_mock.py`), so it still runs for local development.
+
+### Dashboard frontend
+
 ```bash
 cd dashboard/frontend
 npm install
-npm run dev
+npm run dev           # http://localhost:5173
 ```
 
-## Sharing Without the Chrome Web Store
+## Try it without any setup
 
-For reviewers/organizers who just want to try the extension without building from source:
+The dashboard landing page has a **"Try it instantly — no sign-up"** button that
+mints an isolated guest session and drops you into a pre-seeded workspace (a goal,
+a workflow, sample tasks, one finished session). No Google account and no
+extension required. See [docs/JUDGES.html](docs/JUDGES.html).
 
-1. Build and zip it: `pnpm zip` (outputs to `dist-zip/extension-<timestamp>.zip`)
-2. Share that zip file (Drive, GitHub release, etc.)
-3. Ask them to:
-   - Unzip it
-   - Open `chrome://extensions/`
-   - Enable **Developer mode**
-   - Click **Load unpacked** and select the unzipped folder
+## Sharing the extension without the Chrome Web Store
+
+1. Build and zip: `pnpm zip` → `dist-zip/extension-<timestamp>.zip`
+2. Share the zip (Drive, GitHub release, etc.)
+3. Recipient unzips it, opens `chrome://extensions/`, enables **Developer mode**,
+   clicks **Load unpacked**, and selects the unzipped folder
 
 ## Available Scripts
 
-- `pnpm dev` - Start development mode with HMR
-- `pnpm build` - Build for production
-- `pnpm lint` - Run ESLint
-- `pnpm type-check` - Run TypeScript type checking
-- `pnpm e2e` - Build, zip, and run end-to-end tests
+- `pnpm dev` — development build with HMR
+- `pnpm build` — production build
+- `pnpm zip` — build and package the extension into `dist-zip/`
+- `pnpm lint` / `pnpm lint:fix` — ESLint
+- `pnpm type-check` — TypeScript type checking
+- `pnpm e2e` — build, zip, and run end-to-end tests
 
 ## Configuration
 
 ### Chrome Extension
 
-- Manifest: `chrome-extension/manifest.ts`
-- Background script: `chrome-extension/src/background/`
-- Content scripts: `pages/content/`
+- Manifest: [chrome-extension/manifest.ts](chrome-extension/manifest.ts)
+- Background script: [chrome-extension/src/background/](chrome-extension/src/background/)
+- Content scripts: [pages/content/](pages/content/)
 
 ### Environment Variables
 
-See `dashboard/backend/.env.example` for the backend variables and what each one does.
+See [dashboard/backend/.env.example](dashboard/backend/.env.example) for every
+backend variable and what it does. Key ones:
 
-For Google Calendar sync (`dashboard/backend/calendar_sync.py`), set in `dashboard/backend/.env`:
-- `GOOGLE_OAUTH_CLIENT_ID` — defaults to the same client id used for sign-in
-- `GOOGLE_OAUTH_CLIENT_SECRET` — required; create a Web application OAuth client in Google Cloud Console with the `https://www.googleapis.com/auth/calendar.events` scope enabled
+- `GEMINI_API_KEY`, `GOOGLE_CLOUD_PROJECT`, `GEMINI_MODEL` — the AI workflow engine
+- `FIREBASE_PROJECT_ID`, `USE_FIRESTORE`, `GOOGLE_APPLICATION_CREDENTIALS` — storage
+- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` — Google sign-in
+
+**Google Calendar sync** *(planned)* — two-way sync between the generated
+time-blocked schedule and the user's Google Calendar: read existing events to
+avoid conflicts when scheduling focus blocks, and write planned blocks and
+deadlines back as calendar events. Handled by
+[dashboard/backend/calendar_sync.py](dashboard/backend/calendar_sync.py); needs a
+Web application OAuth client with the
+`https://www.googleapis.com/auth/calendar.events` scope.
+
+## Team
+
+**Midnight Syntax** — Suriya A D · Pratyush R · Shravanth
+
+- Demo video: https://youtu.be/U-YKDOsGbo0
+- Demo web app: WEFT dashboard
+- Android APK: separate release
 
 ## Acknowledgments
 
-This project is built on top of the excellent [chrome-extension-boilerplate-react-vite](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite) starter template by [Seo Jong Hak](https://github.com/Jonghakseo), which provides a solid foundation for Chrome Extension development with React, TypeScript, and Vite.
+Built on the excellent
+[chrome-extension-boilerplate-react-vite](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite)
+starter by [Seo Jong Hak](https://github.com/Jonghakseo).
 
 ## License
 
@@ -153,4 +198,4 @@ MIT
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome — please feel free to open a Pull Request.
