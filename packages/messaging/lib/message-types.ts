@@ -26,7 +26,8 @@ export type MessageType =
   | 'CONTEXT_RESPONSE'
   | 'SAVE_REFERENCE'
   | 'AUTH_CHANGED'
-  | 'QUERY_DASHBOARD_AUTH';
+  | 'QUERY_DASHBOARD_AUTH'
+  | 'DASHBOARD_FOCUS_CHANGED';
 
 export interface BaseMessage {
   type: MessageType;
@@ -132,6 +133,18 @@ export interface QueryDashboardAuthMessage extends BaseMessage {
   payload?: Record<string, never>;
 }
 
+// The dashboard tab (dashboard/frontend/src/App.tsx) -> its dashboard-bridge
+// content script -> the background script, whenever a real focus session
+// starts, stops, pauses, or resumes. The background reconciles the
+// extension's distraction-site blocking to match. `active` is a hint only —
+// the background re-reads /sessions before acting.
+export interface DashboardFocusChangedMessage extends BaseMessage {
+  type: 'DASHBOARD_FOCUS_CHANGED';
+  payload: {
+    active: boolean;
+  };
+}
+
 export type ExtensionMessage =
   | TaskMessage
   | FocusMessage
@@ -143,7 +156,8 @@ export type ExtensionMessage =
   | ContextResponseMessage
   | SaveReferenceMessage
   | AuthChangedMessage
-  | QueryDashboardAuthMessage;
+  | QueryDashboardAuthMessage
+  | DashboardFocusChangedMessage;
 
 export interface MessageResponse<T = unknown> {
   success: boolean;

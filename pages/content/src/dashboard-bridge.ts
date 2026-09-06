@@ -46,6 +46,21 @@ function readDashboardAuth(): DashboardAuthData {
   }
 }
 
+// The dashboard's /api/sessions sync loop (App.tsx) fires this whenever a
+// real focus session starts, stops, pauses, or resumes. We forward it to the
+// background script, which turns the extension's own distraction-site
+// blocking on/off to match — without this, starting focus on the dashboard
+// never blocked anything in the browser (blocking used to be enabled only
+// from the extension popup). The background's 1-min reconcile alarm is the
+// backstop for when no dashboard tab is open to send this.
+function relayFocusToBackground(active: boolean) {
+  chrome.runtime.sendMessage({ type: 'DASHBOARD_FOCUS_CHANGED', payload: { active } }, () => {
+    if (chrome.runtime.lastError) {
+      console.log('[Dashboard Bridge] Focus relay note:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
 function relayToBackground(authData: DashboardAuthData) {
   chrome.runtime.sendMessage(
     {
@@ -77,6 +92,12 @@ export function initializeDashboardBridge(): void {
   window.addEventListener('dashboardAuthChanged', (event: any) => {
     console.log('[Dashboard Bridge] Auth changed event received:', event.detail);
     relayToBackground(event.detail);
+  });
+
+  window.addEventListener('dashboardFocusChanged', (event: any) => {
+    const active = !!event?.detail?.active;
+    console.log('[Dashboard Bridge] Focus changed event received:', active);
+    relayFocusToBackground(active);
   });
 
   // Active pull: the popup's "Already Logged In? Click Here" sends this

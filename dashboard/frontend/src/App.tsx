@@ -126,6 +126,18 @@ export default function App() {
   const [pomoSeconds, setPomoSeconds] = useState(POMODORO_SECONDS);
   const [pomoRunning, setPomoRunning] = useState(false);
   const [pomoSessionId, setPomoSessionId] = useState<number | null>(null);
+
+  // Tells the extension whether a real focus session is running (so it can
+  // block distracting sites to match). Deduped so the 5s backend-sync loop
+  // and the direct dispatches on the play/pause/reset buttons don't emit the
+  // same state twice. The dashboard-bridge content script picks this up and
+  // relays it to the extension's background script.
+  const lastFocusActiveRef = useRef<boolean | null>(null);
+  const emitFocusState = (focusActive: boolean) => {
+    if (lastFocusActiveRef.current === focusActive) return;
+    lastFocusActiveRef.current = focusActive;
+    window.dispatchEvent(new CustomEvent('dashboardFocusChanged', { detail: { active: focusActive } }));
+  };
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<'' | 'schedule' | 'reschedule'>('');
 
@@ -287,6 +299,15 @@ export default function App() {
   // without this, a session started from the extension popup (or this same
   // page before a reload) never shows up here: pomoSeconds/pomoRunning were
   // purely local state with nothing ever reading back from /api/sessions.
+  //
+  // This same read is also the one place that tells the extension whether to
+  // block distracting sites: the extension's site-blocking (blockingStorage)
+  // used to be turned on ONLY from the extension popup, so starting focus
+  // here never blocked anything. We now emit `dashboardFocusChanged` whenever
+  // the real focus state (running, not paused, time left) flips, and the
+  // dashboard-bridge content script relays it to the background script, which
+  // enables/disables blocking to match. The 1-min background reconcile loop
+  // is the backstop for when no dashboard tab is open.
   useEffect(() => {
     if (!isAuthenticated) return;
     const sync = async () => {
@@ -297,13 +318,16 @@ export default function App() {
         if (!active) {
           setPomoSessionId(null);
           setPomoRunning(false);
+          emitFocusState(false);
           return;
         }
         const elapsedSeconds = Math.floor((Date.now() - new Date(active.start_time).getTime()) / 1000);
         const remaining = Math.max(0, active.duration_minutes * 60 - elapsedSeconds);
+        const running = !active.is_paused && remaining > 0;
         setPomoSessionId(active.id);
         setPomoSeconds(remaining);
-        setPomoRunning(!active.is_paused && remaining > 0);
+        setPomoRunning(running);
+        emitFocusState(running);
       } catch { /* offline — try again next tick */ }
     };
     sync();
@@ -541,6 +565,7 @@ export default function App() {
       if (data.system_trigger === 'START_POMODORO') {
         setPomoSeconds(POMODORO_SECONDS);
         setPomoRunning(true);
+        emitFocusState(true);
         const forTask = data.tasks.find((t) => t.status === 'IN_PROGRESS') ?? null;
         api.startSession(forTask ? forTask.task_name : 'Pomodoro focus session', POMODORO_SECONDS / 60, forTask?.id)
           .then((s) => setPomoSessionId(s.id))
@@ -594,12 +619,14 @@ export default function App() {
   const togglePomo = () => {
     const next = !pomoRunning;
     setPomoRunning(next);
+    emitFocusState(next && pomoSeconds > 0);
     if (pomoSessionId != null) api.patchSession(pomoSessionId, { is_paused: !next }).catch(() => {});
   };
 
   const resetPomo = () => {
     setPomoRunning(false);
     setPomoSeconds(POMODORO_SECONDS);
+    emitFocusState(false);
     if (pomoSessionId != null) {
       api.patchSession(pomoSessionId, { end_time: new Date().toISOString() })
         .then(() => api.listTasks().then(setTasks))
@@ -854,6 +881,7 @@ export default function App() {
     setTab('today');
     setPomoSeconds(POMODORO_SECONDS);
     setPomoRunning(true);
+    emitFocusState(true);
     // Starting a session auto-closes whatever was still running (server-side)
     // and credits its elapsed time to whichever task it was linked to —
     // refetch so that task's progress bar picks it up.
