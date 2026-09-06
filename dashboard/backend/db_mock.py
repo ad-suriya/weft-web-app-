@@ -17,6 +17,7 @@ _data = {
     "counters": {},
     "chats": {},
     "references": {},
+    "quizzes": {},
 }
 
 _next_ids = {
@@ -28,6 +29,7 @@ _next_ids = {
     "projects": 1,
     "workflows": 1,
     "references": 1,
+    "quizzes": 1,
 }
 
 
@@ -68,7 +70,7 @@ def get_task(task_id: int, user_id: str) -> Optional[dict]:
 def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estimated_minutes=30,
                 deadline=None, next_micro_step="", goal_id=None, url=None,
                 selected_text=None, tags=None, dependencies=None, completed_minutes=0,
-                workflow_id=None, step_id=None) -> dict:
+                workflow_id=None, step_id=None, subject=None, topic=None) -> dict:
     task_id = _next_ids["tasks"]
     _next_ids["tasks"] += 1
     ts = now_iso()
@@ -87,6 +89,8 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
         "goal_id": goal_id,
         "workflow_id": workflow_id,
         "step_id": step_id,
+        "subject": subject,
+        "topic": topic,
         "url": url,
         "selected_text": selected_text,
         "tags": tags or [],
@@ -102,7 +106,7 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
 def update_task(task_id: int, user_id: str, **fields) -> Optional[dict]:
     allowed = {"task_name", "status", "urgency", "estimated_minutes", "completed_minutes", "deadline",
                "next_micro_step", "scheduled_start", "scheduled_end", "goal_id", "workflow_id", "step_id",
-               "url", "selected_text", "tags", "calendar_event_id", "dependencies"}
+               "url", "selected_text", "tags", "calendar_event_id", "dependencies", "subject", "topic"}
     task = _data["tasks"].get(task_id)
     if not task or task["user_id"] != user_id:
         return None
@@ -440,6 +444,7 @@ def create_workflow(user_id: str, name: str, sop_text: str, trigger_type: str,
     workflow = {
         "id": workflow_id,
         "user_id": user_id,
+        "kind": "AUTOMATION",
         "name": name,
         "sop_text": sop_text,
         "trigger_type": trigger_type,
@@ -454,8 +459,50 @@ def create_workflow(user_id: str, name: str, sop_text: str, trigger_type: str,
     return workflow
 
 
+def create_study_workflow(user_id: str, name: str, subject: str, canonical_subject: str,
+                           goal_summary: str = "") -> dict:
+    workflow_id = _next_ids["workflows"]
+    _next_ids["workflows"] += 1
+    ts = now_iso()
+    workflow = {
+        "id": workflow_id,
+        "user_id": user_id,
+        "kind": "STUDY_PLAN",
+        "name": name,
+        "sop_text": "",
+        "trigger_type": "MANUAL",
+        "trigger_match": "",
+        "steps": [],
+        "active": True,
+        "last_run": None,
+        "subject": subject,
+        "canonical_subject": canonical_subject,
+        "goal_summary": goal_summary,
+        "exam_date": None,
+        "hours_per_day": None,
+        "target": "",
+        "level": "",
+        "syllabus_topics": [],
+        "status": "PLANNING",
+        "stages": [],
+        "plan_summary": "",
+        "weak_topics": [],
+        "quiz_history": [],
+        "goal_id": None,
+        "created_at": ts,
+        "updated_at": ts,
+    }
+    _data["workflows"][workflow_id] = workflow
+    return workflow
+
+
 def update_workflow(workflow_id: int, user_id: str, **fields) -> Optional[dict]:
-    allowed = {"name", "sop_text", "trigger_type", "trigger_match", "steps", "active", "last_run"}
+    allowed = {
+        "name", "sop_text", "trigger_type", "trigger_match", "steps", "active", "last_run",
+        "kind", "subject", "canonical_subject", "goal_summary", "exam_date", "hours_per_day",
+        "target", "level", "syllabus_topics", "status", "stages", "plan_summary", "weak_topics",
+        "quiz_history", "goal_id",
+    }
     workflow = _data["workflows"].get(workflow_id)
     if not workflow or workflow["user_id"] != user_id:
         return None
@@ -464,6 +511,66 @@ def update_workflow(workflow_id: int, user_id: str, **fields) -> Optional[dict]:
             workflow[k] = v
     workflow["updated_at"] = now_iso()
     return workflow
+
+
+def find_study_workflow_by_subject(user_id: str, canonical_subject: str) -> Optional[dict]:
+    subject_lc = canonical_subject.strip().lower()
+    candidates = [
+        w for w in list_workflows(user_id)
+        if w.get("kind") == "STUDY_PLAN"
+        and (w.get("canonical_subject") or "").strip().lower() == subject_lc
+        and w.get("status") != "COMPLETED"
+    ]
+    return max(candidates, key=lambda w: w["id"]) if candidates else None
+
+
+def list_study_workflows(user_id: str) -> list[dict]:
+    return [w for w in list_workflows(user_id) if w.get("kind") == "STUDY_PLAN"]
+
+
+# --- Quizzes (Study Planner review)
+def create_quiz(user_id: str, workflow_id: int, subject: str, topics: list[str], questions: list[dict]) -> dict:
+    quiz_id = _next_ids["quizzes"]
+    _next_ids["quizzes"] += 1
+    ts = now_iso()
+    quiz = {
+        "id": quiz_id,
+        "user_id": user_id,
+        "workflow_id": workflow_id,
+        "subject": subject,
+        "topics": topics,
+        "questions": questions,
+        "submitted": False,
+        "answers": None,
+        "result": None,
+        "created_at": ts,
+        "updated_at": ts,
+    }
+    _data["quizzes"][quiz_id] = quiz
+    return quiz
+
+
+def get_quiz(quiz_id: int, user_id: str) -> Optional[dict]:
+    quiz = _data["quizzes"].get(quiz_id)
+    return dict(quiz) if quiz and quiz["user_id"] == user_id else None
+
+
+def submit_quiz(quiz_id: int, user_id: str, answers: list[int], result: dict) -> Optional[dict]:
+    quiz = _data["quizzes"].get(quiz_id)
+    if not quiz or quiz["user_id"] != user_id:
+        return None
+    quiz["submitted"] = True
+    quiz["answers"] = answers
+    quiz["result"] = result
+    quiz["updated_at"] = now_iso()
+    return quiz
+
+
+def list_quizzes(user_id: str, workflow_id: Optional[int] = None) -> list[dict]:
+    items = [dict(q) for q in _data["quizzes"].values() if q["user_id"] == user_id]
+    if workflow_id is not None:
+        items = [q for q in items if q.get("workflow_id") == workflow_id]
+    return sorted(items, key=lambda q: q["id"])
 
 
 def delete_workflow(workflow_id: int, user_id: str) -> bool:
@@ -583,7 +690,7 @@ def set_user_consent(user_id: str, version: str) -> dict:
 # Mirrors db.py: per-user collections wiped by delete_user_data (not `users`).
 _USER_COLLECTIONS = (
     "tasks", "workflows", "sessions", "goals", "habits", "habit_logs",
-    "reminders", "projects", "task_events", "chats", "references",
+    "reminders", "projects", "task_events", "chats", "references", "quizzes",
 )
 
 

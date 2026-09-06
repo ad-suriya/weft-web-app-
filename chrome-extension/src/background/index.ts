@@ -185,13 +185,32 @@ chrome.runtime.onMessage.addListener(async (message: any, sender, sendResponse) 
     if (message.type === 'FOCUS_STARTED') {
       console.log('[Background] Focus started:', message.payload);
       const { taskName, stepText } = message.payload || {};
+      // Distraction blocking (blockingStorage) is extension-only storage — a
+      // plain page (the dashboard) can't touch it directly, so every session
+      // start funnels through here regardless of which surface started it
+      // (extension popup or dashboard-bridge). The popup already calls
+      // blockingStorage.enable() itself with its own custom site list before
+      // sending this message, so this only actually enables (with the
+      // product-default list) when blocking wasn't already on — otherwise a
+      // dashboard-originated message would blow away a popup-set custom list.
+      const blocking = await blockingStorage.get();
+      if (!blocking.isActive) await blockingStorage.enable();
       if (taskName) {
         await setFocusContext({ taskName, stepText, lowRelevanceSince: null, notified: false });
         chrome.alarms.create(CONTEXT_CHECK_ALARM, { periodInMinutes: CONTEXT_CHECK_PERIOD_MINUTES });
       }
       sendResponse({ success: true });
-    } else if (message.type === 'FOCUS_ENDED' || message.type === 'FOCUS_PAUSED') {
+    } else if (message.type === 'FOCUS_ENDED') {
       console.log('[Background]', message.type);
+      await blockingStorage.disable();
+      await setFocusContext(null);
+      chrome.alarms.clear(CONTEXT_CHECK_ALARM);
+      sendResponse({ success: true });
+    } else if (message.type === 'FOCUS_PAUSED') {
+      console.log('[Background]', message.type);
+      // A pause keeps the session alive (see reconcileBlocking above) —
+      // blocking intentionally stays on, only the drift-detection context
+      // clears so a paused session doesn't nag about being "off-task".
       await setFocusContext(null);
       chrome.alarms.clear(CONTEXT_CHECK_ALARM);
       sendResponse({ success: true });

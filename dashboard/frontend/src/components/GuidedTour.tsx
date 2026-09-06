@@ -32,11 +32,6 @@ const STEPS: Step[] = [
     body: "Add a task manually here, or hit \"Plan my day\" to auto time-block everything you've got.",
   },
   {
-    selector: '[data-tour="nav-context"]',
-    title: 'Context',
-    body: 'The working set for the step you\'re on — next move, dependencies, and saved references, kept together for a clean resume.',
-  },
-  {
     selector: '[data-tour="nav-workflows"]',
     title: 'Workflows',
     body: 'Describe a recurring procedure in plain English and AI builds an automated workflow that creates those tasks for you.',

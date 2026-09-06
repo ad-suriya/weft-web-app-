@@ -153,7 +153,7 @@ export function PreviewTag() {
 // New primitives
 // ------------------------------------------------------------------------
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'focus';
 type ButtonSize = 'sm' | 'md';
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
@@ -161,6 +161,10 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   secondary: 'border border-ink/14 hover:bg-accent/10 hover:text-accent-strong hover:border-transparent',
   ghost: 'border border-transparent text-ink-soft hover:text-accent-strong hover:bg-accent/10',
   danger: 'bg-danger text-inverse hover:bg-danger-strong border border-transparent',
+  // "Start Focus" CTAs specifically — a distinct hue from the everyday green
+  // primary button so starting a focus session reads as its own kind of
+  // action, while staying in the same muted, editorial palette.
+  focus: 'bg-focus text-inverse hover:bg-focus-strong border border-transparent',
 };
 
 const BUTTON_SIZE: Record<ButtonSize, string> = {

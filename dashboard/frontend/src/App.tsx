@@ -27,11 +27,11 @@ import NotificationPrompt from './components/NotificationPrompt';
 import ExtensionPrompt from './components/ExtensionPrompt';
 import WorkflowsPanel from './components/WorkflowsPanel';
 import DecomposePanel from './components/DecomposePanel';
-import MemoryPanel from './components/MemoryPanel';
+import QuizModal from './components/QuizModal';
 import Sidebar, { Section } from './components/Sidebar';
 import TodayScreen from './screens/TodayScreen';
 import MyWorkScreen from './screens/MyWorkScreen';
-import ContextScreen from './screens/ContextScreen';
+import WorkflowDetailScreen from './screens/WorkflowDetailScreen';
 import DevicesScreen from './screens/DevicesScreen';
 import ActivityScreen from './screens/ActivityScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -55,6 +55,14 @@ const SEED_MESSAGE: ChatMessage = {
   role: 'model',
   text: "What's weighing on you? Dump the deadline, the half-finished task, the thing you keep avoiding — I'll turn it into a plan and start the first step for you.",
 };
+
+// Study Planner routing — plain path-based navigation (no router library):
+// nginx/Vite both fall back to index.html for unknown paths, so a real
+// bookmarkable /workflows/<id> URL just works without SPA route config.
+function parseWorkflowIdFromPath(): number | null {
+  const m = window.location.pathname.match(/^\/workflows\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
 
 const CHAT_SESSION_KEY = 'chatSessionId';
 function loadOrCreateChatSessionId(): string {
@@ -87,6 +95,19 @@ function gcalUrl(task: Task): string {
   const details = encodeURIComponent(task.next_micro_step || '');
   const dates = s && e ? `&dates=${gcalStamp(s)}/${gcalStamp(e)}` : '';
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}${dates}&details=${details}`;
+}
+
+// A plain web page can't touch chrome.storage directly — the extension's
+// distraction blocking (blockingStorage, enabled/disabled from FOCUS_STARTED/
+// FOCUS_ENDED) lives entirely in extension-only storage. This mirrors the
+// existing dashboardAuthChanged bridge: the dashboard-bridge content script
+// listens for this DOM event and relays it to the background service worker,
+// which is the only thing that can actually flip blocking on/off. Without
+// this, a focus session started from the dashboard (as opposed to the
+// extension popup) never enabled site blocking at all — YouTube etc. stayed
+// reachable during a "focus session" that only existed as a backend timer.
+function dispatchFocusSessionEvent(active: boolean, taskName?: string, stepText?: string) {
+  window.dispatchEvent(new CustomEvent('weftFocusSessionChanged', { detail: { active, taskName, stepText } }));
 }
 
 export default function App() {
@@ -137,7 +158,14 @@ export default function App() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [memoryFacts, setMemoryFacts] = useState<MemoryFact[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [tab, setTab] = useState<Section>('today');
+  const [tab, setTab] = useState<Section>(() => (parseWorkflowIdFromPath() ? 'workflows' : 'today'));
+
+  // --- Study Planner: workflow detail routing/state --------------------------
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(parseWorkflowIdFromPath);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
+  const [workflowJustCreated, setWorkflowJustCreated] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [replanBusy, setReplanBusy] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
@@ -146,6 +174,10 @@ export default function App() {
   const [calendarBusy, setCalendarBusy] = useState(false);
 
   const guardRef = useRef(false); // prevents overlapping auto-reschedules
+  // Which session id we've last told the extension bridge is "active" — lets
+  // the 5s session-sync poll assert focus-blocking once per session instead
+  // of re-sending the same message every tick.
+  const bridgedSessionIdRef = useRef<number | null>(null);
 
   // --- effects ---------------------------------------------------------------
   useEffect(() => {
@@ -297,6 +329,13 @@ export default function App() {
         if (!active) {
           setPomoSessionId(null);
           setPomoRunning(false);
+          // A session that ended anywhere other than this tab (extension
+          // popup's Stop, another tab, the timer running out elsewhere)
+          // still needs to unblock distraction sites here too.
+          if (bridgedSessionIdRef.current != null) {
+            dispatchFocusSessionEvent(false);
+            bridgedSessionIdRef.current = null;
+          }
           return;
         }
         const elapsedSeconds = Math.floor((Date.now() - new Date(active.start_time).getTime()) / 1000);
@@ -304,6 +343,13 @@ export default function App() {
         setPomoSessionId(active.id);
         setPomoSeconds(remaining);
         setPomoRunning(!active.is_paused && remaining > 0);
+        // Covers a session already running when this tab loads (or started
+        // from elsewhere) — assert blocking once per session id rather than
+        // re-sending on every 5s tick.
+        if (bridgedSessionIdRef.current !== active.id) {
+          dispatchFocusSessionEvent(true, active.description);
+          bridgedSessionIdRef.current = active.id;
+        }
       } catch { /* offline — try again next tick */ }
     };
     sync();
@@ -377,6 +423,7 @@ export default function App() {
     if (pomoSeconds !== 0 || pomoSessionId == null) return;
     const id = pomoSessionId;
     setPomoSessionId(null);
+    dispatchFocusSessionEvent(false);
     api.patchSession(id, { end_time: new Date().toISOString() })
       // The backend just credited this session's elapsed time to its linked
       // task (if any) — refetch so the progress bar reflects it.
@@ -487,6 +534,28 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarConnected]);
 
+  // Back/forward navigation for the /workflows/<id> URL.
+  useEffect(() => {
+    const onPop = () => {
+      const id = parseWorkflowIdFromPath();
+      setSelectedWorkflowId(id);
+      setTab(id ? 'workflows' : 'today');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  // Load (and keep fresh) the selected study workflow's live progress —
+  // refetches whenever the task list changes so completing/starting a task
+  // anywhere in the app is reflected here without a manual refresh.
+  useEffect(() => {
+    if (!isAuthenticated || selectedWorkflowId == null) { setSelectedWorkflow(null); return; }
+    let cancelled = false;
+    api.getWorkflow(selectedWorkflowId).then((w) => { if (!cancelled) setSelectedWorkflow(w); }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, selectedWorkflowId, tasks]);
+
   // --- helpers ---------------------------------------------------------------
   const pushSystem = (text: string) =>
     setMessages((prev) => [...prev, { role: 'model', text, system: true }]);
@@ -538,10 +607,18 @@ export default function App() {
       setAction(data.agentic_action?.action_type !== 'NONE' ? data.agentic_action : null);
       setTasks(data.tasks);
       setTrigger(data.system_trigger);
+      // Study Planner: this turn touched a study goal — keep the workflow
+      // list in sync, and jump straight to a freshly-built plan the moment
+      // its stages/tasks actually exist (not while still being clarified).
+      if (data.workflow) {
+        upsertWorkflow(data.workflow);
+        if (data.workflow_created) openWorkflow(data.workflow.id, { created: true });
+      }
       if (data.system_trigger === 'START_POMODORO') {
         setPomoSeconds(POMODORO_SECONDS);
         setPomoRunning(true);
         const forTask = data.tasks.find((t) => t.status === 'IN_PROGRESS') ?? null;
+        dispatchFocusSessionEvent(true, forTask?.task_name, forTask?.next_micro_step);
         api.startSession(forTask ? forTask.task_name : 'Pomodoro focus session', POMODORO_SECONDS / 60, forTask?.id)
           .then((s) => setPomoSessionId(s.id))
           .catch(() => {});
@@ -601,6 +678,7 @@ export default function App() {
     setPomoRunning(false);
     setPomoSeconds(POMODORO_SECONDS);
     if (pomoSessionId != null) {
+      dispatchFocusSessionEvent(false);
       api.patchSession(pomoSessionId, { end_time: new Date().toISOString() })
         .then(() => api.listTasks().then(setTasks))
         .catch(() => {});
@@ -707,7 +785,56 @@ export default function App() {
   const deleteWorkflowById = async (id: number) => {
     await api.deleteWorkflow(id);
     setWorkflows((prev) => prev.filter((x) => x.id !== id));
+    if (selectedWorkflowId === id) closeWorkflowView();
   };
+
+  // --- Study Planner: Goal -> Workflow -> Focus -> Progress -> Review -------
+  const upsertWorkflow = (w: Workflow) => {
+    setWorkflows((prev) => {
+      const idx = prev.findIndex((x) => x.id === w.id);
+      if (idx >= 0) { const copy = [...prev]; copy[idx] = w; return copy; }
+      return [...prev, w];
+    });
+    if (selectedWorkflowId === w.id) setSelectedWorkflow(w);
+  };
+
+  // Real path navigation (not just tab state) so a freshly-built plan is at
+  // a shareable/bookmarkable /workflows/<id> URL, per the spec — nginx and
+  // Vite both fall back to index.html for unknown paths already.
+  const openWorkflow = (id: number, opts: { created?: boolean } = {}) => {
+    window.history.pushState({}, '', `/workflows/${id}`);
+    setSelectedWorkflowId(id);
+    setTab('workflows');
+    setWorkflowJustCreated(!!opts.created);
+  };
+  const closeWorkflowView = () => {
+    window.history.pushState({}, '', '/');
+    setSelectedWorkflowId(null);
+    setSelectedWorkflow(null);
+  };
+  // Any sidebar navigation away from an open workflow detail returns to that
+  // tab's own screen (and drops the /workflows/<id> URL) rather than leaving
+  // a stale detail view addressed by a URL that no longer matches the tab.
+  const selectTab = (s: Section) => {
+    if (selectedWorkflowId != null) closeWorkflowView();
+    setTab(s);
+  };
+
+  const replanSelectedWorkflow = async () => {
+    if (!selectedWorkflow) return;
+    setReplanBusy(true);
+    try {
+      const r = await api.replanWorkflow(selectedWorkflow.id);
+      upsertWorkflow(r.workflow);
+      pushSystem(r.message);
+      api.listTasks().then(setTasks).catch(() => {});
+    } catch (err: any) {
+      setError(err.message || 'Could not recalculate the plan.');
+    } finally {
+      setReplanBusy(false);
+    }
+  };
+
 
   // --- task decomposition handlers (AI Task Decomposition) ------------------
   const decomposeGoalDraft = (goal: string) => api.decomposeGoal(goal);
@@ -833,6 +960,18 @@ export default function App() {
     () => (lastSession?.task_id != null ? tasks.find((t) => t.id === lastSession.task_id) ?? null : null),
     [lastSession, tasks],
   );
+  // The study plan the user is most likely mid-way through right now — the
+  // one their current/next task belongs to if it's linked to a study
+  // workflow, otherwise the most recently touched active one.
+  const activeStudyWorkflow = useMemo(() => {
+    const linkedId = executionTask?.workflow_id;
+    const linked = linkedId != null ? workflows.find((w) => w.id === linkedId && w.kind === 'STUDY_PLAN') : null;
+    if (linked) return linked;
+    const candidates = workflows.filter(
+      (w) => w.kind === 'STUDY_PLAN' && w.status && w.status !== 'PLANNING' && w.status !== 'COMPLETED',
+    );
+    return [...candidates].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0] ?? null;
+  }, [workflows, executionTask]);
 
   const markTaskDone = async (task: Task) => {
     const updated = await api.patchTask(task.id, { status: 'COMPLETED' });
@@ -851,9 +990,13 @@ export default function App() {
     }
     const updated = await api.patchTask(task.id, { status: 'IN_PROGRESS' });
     setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
-    setTab('today');
+    // "Start Focus" always lands on Today so the running session is visible
+    // — including from inside a workflow's roadmap, which is why this goes
+    // through selectTab (drops the /workflows/<id> URL) rather than setTab.
+    selectTab('today');
     setPomoSeconds(POMODORO_SECONDS);
     setPomoRunning(true);
+    dispatchFocusSessionEvent(true, task.task_name, task.next_micro_step);
     // Starting a session auto-closes whatever was still running (server-side)
     // and credits its elapsed time to whichever task it was linked to —
     // refetch so that task's progress bar picks it up.
@@ -891,15 +1034,25 @@ export default function App() {
             if (selector === '[data-tour="task-toolbar"]' || selector === '[data-tour="nav-my-work"]') setTab('my-work');
             else if (selector === '[data-tour="nav-today"]' || selector === '[data-tour="capture"]') setTab('today');
             else if (selector === '[data-tour="nav-workflows"]') setTab('workflows');
-            else if (selector === '[data-tour="nav-context"]') setTab('context');
           }}
         />
       )}
       {showExtensionPrompt && <ExtensionPrompt onDismiss={dismissExtensionPrompt} />}
-      <Sidebar active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} onLogout={handleLogout} />
+      {selectedWorkflow && (
+        <QuizModal
+          open={quizOpen}
+          workflowId={selectedWorkflow.id}
+          subject={selectedWorkflow.canonical_subject || selectedWorkflow.subject || selectedWorkflow.name}
+          onClose={() => setQuizOpen(false)}
+          onGenerate={api.generateQuiz}
+          onSubmit={api.submitQuiz}
+          onFinished={upsertWorkflow}
+        />
+      )}
+      <Sidebar active={tab} onSelect={selectTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} onLogout={handleLogout} />
 
       <div className="flex-grow flex flex-col min-w-0 h-full">
-        <Sidebar horizontal active={tab} onSelect={setTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} onLogout={handleLogout} />
+        <Sidebar horizontal active={tab} onSelect={selectTab} badges={{ 'my-work': openTasks.length || undefined, workflows: workflows.length || undefined }} onLogout={handleLogout} />
 
         {/* Top bar */}
         <header className="relative z-50 flex flex-col md:flex-row justify-between md:items-center border-b border-ink/14 bg-surface px-4 md:px-6 py-3 gap-3">
@@ -929,7 +1082,7 @@ export default function App() {
       <div className="flex-grow flex flex-row min-h-0 overflow-hidden">
       <div className="flex-grow flex flex-col justify-between min-w-0 min-h-0 overflow-y-auto">
       <main className="w-full flex flex-col gap-5 p-4 md:p-8">
-          <div className="w-full max-w-5xl flex flex-col gap-5">
+          <div className="w-full max-w-5xl mx-auto flex flex-col gap-5">
           {showNotifPrompt && (
             <NotificationPrompt onEnable={enableNotifications} onDismiss={dismissNotifPrompt} />
           )}
@@ -1035,7 +1188,9 @@ export default function App() {
                 onStartFocus={startFocusOnTask}
                 onMarkDone={markTaskDone}
                 onSkip={skipTask}
-                onGoMyWork={() => setTab('my-work')}
+                onGoMyWork={() => selectTab('my-work')}
+                studyWorkflow={activeStudyWorkflow}
+                onOpenWorkflow={openWorkflow}
                 focusPrefs={focusPrefs}
                 onToggleStudyFocus={() => updateFocusPrefs({ study_focus: !focusPrefs.study_focus })}
                 habits={habits}
@@ -1087,29 +1242,42 @@ export default function App() {
               onDeleteHabit={deleteHabit}
               onDecompose={decomposeGoalDraft}
               onCommitDecomposition={commitDecomposition}
+              workflows={workflows}
+              onOpenWorkflow={openWorkflow}
             />
           )}
 
           {tab === 'workflows' && (
-            <WorkflowsPanel
-              workflows={workflows}
-              onGenerate={generateWorkflowDraft}
-              onSave={saveWorkflow}
-              onToggleActive={toggleWorkflowActive}
-              onRun={runWorkflow}
-              onDelete={deleteWorkflowById}
-            />
-          )}
-
-          {tab === 'context' && (
-            <ContextScreen
-              task={executionTask}
-              goals={goals}
-              tasks={tasks}
-              onGoMyWork={() => setTab('my-work')}
-              memoryFacts={memoryFacts}
-              onSummarizeMemory={summarizeMemoryNow}
-            />
+            selectedWorkflowId != null ? (
+              selectedWorkflow && selectedWorkflow.id === selectedWorkflowId ? (
+                <WorkflowDetailScreen
+                  workflow={selectedWorkflow}
+                  tasks={tasks}
+                  justCreated={workflowJustCreated}
+                  onIntroDone={() => setWorkflowJustCreated(false)}
+                  onBack={closeWorkflowView}
+                  onStartFocus={startFocusOnTask}
+                  onCycleStatus={cycleStatus}
+                  onReplan={replanSelectedWorkflow}
+                  replanBusy={replanBusy}
+                  onOpenQuiz={() => setQuizOpen(true)}
+                />
+              ) : (
+                <div className="flex justify-center py-16">
+                  <Loader2 className="w-6 h-6 animate-spin text-accent" />
+                </div>
+              )
+            ) : (
+              <WorkflowsPanel
+                workflows={workflows}
+                onGenerate={generateWorkflowDraft}
+                onSave={saveWorkflow}
+                onToggleActive={toggleWorkflowActive}
+                onRun={runWorkflow}
+                onDelete={deleteWorkflowById}
+                onOpenWorkflow={openWorkflow}
+              />
+            )
           )}
 
           {tab === 'devices' && (

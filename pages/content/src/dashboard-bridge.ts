@@ -67,6 +67,22 @@ function relayToBackground(authData: DashboardAuthData) {
   );
 }
 
+function relayFocusSessionChange(detail: { active: boolean; taskName?: string; stepText?: string }) {
+  chrome.runtime.sendMessage(
+    {
+      type: detail.active ? 'FOCUS_STARTED' : 'FOCUS_ENDED',
+      payload: detail.active ? { taskName: detail.taskName, stepText: detail.stepText } : {},
+    },
+    response => {
+      if (chrome.runtime.lastError) {
+        console.log('[Dashboard Bridge] Focus session message sent with note:', chrome.runtime.lastError.message);
+      } else {
+        console.log('[Dashboard Bridge] Focus session message sent:', response);
+      }
+    },
+  );
+}
+
 export function initializeDashboardBridge(): void {
   console.log('[Dashboard Bridge] Content script loaded');
 
@@ -77,6 +93,16 @@ export function initializeDashboardBridge(): void {
   window.addEventListener('dashboardAuthChanged', (event: any) => {
     console.log('[Dashboard Bridge] Auth changed event received:', event.detail);
     relayToBackground(event.detail);
+  });
+
+  // Same idea for focus sessions: the dashboard's own Start Focus / timer
+  // end has no direct access to chrome.storage (blockingStorage lives in
+  // extension-only storage), so it dispatches this DOM event and the
+  // background service worker is the one that actually enables/disables
+  // distraction blocking (see chrome-extension/src/background/index.ts).
+  window.addEventListener('weftFocusSessionChanged', (event: any) => {
+    console.log('[Dashboard Bridge] Focus session changed event received:', event.detail);
+    relayFocusSessionChange(event.detail);
   });
 
   // Active pull: the popup's "Already Logged In? Click Here" sends this

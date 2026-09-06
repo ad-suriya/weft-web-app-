@@ -47,6 +47,14 @@ export interface Task {
   scheduled_start: string | null;
   scheduled_end: string | null;
   goal_id: number | null;
+  // Which workflow (and which of its steps/stages) this task belongs to —
+  // shared by the AI Workflow Builder and the Study Planner.
+  workflow_id?: number | null;
+  step_id?: string | null;
+  // Study Planner grouping — set only on tasks generated from a study plan.
+  subject?: string | null;
+  topic?: string | null;
+  tags?: string[];
   calendar_event_id: string | null;
   created_at: string;
   updated_at: string;
@@ -124,6 +132,9 @@ export interface ChatResponse {
   agentic_action: AgenticAction;
   system_trigger: SystemTrigger;
   tasks: Task[];
+  // Study Planner — set whenever this chat turn touched a study goal.
+  workflow?: Workflow | null;
+  workflow_created?: boolean;
 }
 
 export interface StatusInfo {
@@ -278,6 +289,9 @@ export interface WorkflowPlan {
   steps: WorkflowStep[];
 }
 
+export type WorkflowKind = 'AUTOMATION' | 'STUDY_PLAN';
+export type WorkflowStatus = 'PLANNING' | 'READY' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'NEEDS_REVIEW';
+
 export interface Workflow extends WorkflowPlan {
   id: number;
   sop_text: string;
@@ -285,6 +299,113 @@ export interface Workflow extends WorkflowPlan {
   last_run: string | null;
   created_at: string;
   updated_at: string;
+  kind?: WorkflowKind;
+
+  // --- Study Planner (Goal -> Workflow) --------------------------------
+  subject?: string;
+  canonical_subject?: string;
+  goal_summary?: string;
+  exam_date?: string | null; // ISO date
+  hours_per_day?: number | null;
+  target?: string;
+  level?: string;
+  syllabus_topics?: string[];
+  status?: WorkflowStatus;
+  stages?: StudyStage[];
+  plan_summary?: string;
+  weak_topics?: WeakTopic[];
+  quiz_history?: QuizHistoryEntry[];
+  goal_id?: number | null;
+  // Computed server-side on every fetch — never stored, never stale.
+  progress?: StudyProgress;
+}
+
+export interface StudyStage {
+  id: string;
+  name: string;
+  order: number;
+}
+
+export interface StageProgress {
+  id: string;
+  name: string;
+  order: number;
+  completed: number;
+  total: number;
+  pct: number;
+}
+
+export interface StudyProgress {
+  overall_pct: number;
+  completed: number;
+  total: number;
+  stage_progress: StageProgress[];
+  next_task: Task | null;
+  quiz_available: boolean;
+  quiz_reason: string | null;
+  quiz_topics: string[];
+  days_remaining: number | null;
+}
+
+export interface WeakTopic {
+  topic: string;
+  score_pct: number;
+  correct: number;
+  total: number;
+  updated_at: string;
+}
+
+export interface QuizHistoryEntry {
+  quiz_id: number;
+  subject: string;
+  topics: string[];
+  score_pct: number;
+  weak_topics: string[];
+  at: string;
+}
+
+// --- Study Planner: Quiz / Review --------------------------------------------
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  topic: string;
+}
+
+export interface Quiz {
+  id: number;
+  workflow_id: number;
+  subject: string;
+  topics: string[];
+  submitted: boolean;
+  questions: QuizQuestion[];
+  result: QuizResult | null;
+}
+
+export interface QuizTopicResult {
+  topic: string;
+  correct: number;
+  total: number;
+  score_pct: number;
+}
+
+export interface QuizResult {
+  correct: number;
+  total: number;
+  score_pct: number;
+  per_topic: QuizTopicResult[];
+  weak_topics: string[];
+  strong_topics: string[];
+}
+
+export interface QuizSubmitResult {
+  quiz: Quiz;
+  result: QuizResult;
+  workflow: Workflow;
+}
+
+export interface ReplanResult {
+  message: string;
+  workflow: Workflow;
 }
 
 // --- AI Task Decomposition --------------------------------------------------

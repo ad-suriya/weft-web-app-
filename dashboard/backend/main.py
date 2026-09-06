@@ -46,6 +46,7 @@ import reminders as reminders_mod
 import risk
 import scheduler
 import search as search_mod
+import study
 
 app = FastAPI(title="Task Weave Engine")
 
@@ -88,6 +89,15 @@ class ChatResponse(BaseModel):
     agentic_action: engine.AgenticAction
     system_trigger: engine.SystemTrigger
     tasks: List[dict]
+    # Study Planner: set whenever this turn touched a study goal — lets the
+    # frontend auto-navigate to a freshly-built plan and keep an in-progress
+    # one (still being clarified) reflected without a full page reload.
+    workflow: Optional[dict] = None
+    workflow_created: bool = False
+
+
+class QuizSubmitRequest(BaseModel):
+    answers: List[int]
 
 
 class ChatMessageCreate(BaseModel):
@@ -542,6 +552,110 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
     return resp
 
 
+# --- Study Planner (Goal -> Workflow -> Tasks) --------------------------------
+def _with_progress(workflow: dict, tasks: list[dict], now: Optional[datetime] = None) -> dict:
+    """Attach live progress (study.py) to a STUDY_PLAN workflow — never cached,
+    always derived from the real, current task list. AUTOMATION workflows pass
+    through unchanged."""
+    if workflow.get("kind") != "STUDY_PLAN":
+        return workflow
+    return {**workflow, "progress": study.compute_progress(workflow, tasks, now)}
+
+
+def _study_workflow_context(user_id: str, tasks: list[dict], now: datetime) -> list[dict]:
+    """Compact ground-truth summary of the user's existing study workflows,
+    fed into engine.chat so it can (a) recognize a subject already has a plan
+    instead of starting a near-duplicate, and (b) answer "how am I doing with
+    X" from real numbers instead of guessing."""
+    out = []
+    for wf in db.list_study_workflows(user_id):
+        prog = study.compute_progress(wf, tasks, now)
+        out.append({
+            "id": wf["id"],
+            "canonical_subject": wf.get("canonical_subject") or wf.get("subject") or wf["name"],
+            "status": wf.get("status"),
+            "exam_date": wf.get("exam_date"),
+            "completed": prog["completed"],
+            "total": prog["total"],
+            "weak_topics": [w["topic"] for w in (wf.get("weak_topics") or [])],
+        })
+    return out
+
+
+def _handle_study_signal(user_id: str, signal: "engine.StudySignal", now: datetime) -> tuple[Optional[dict], bool]:
+    """Persist whatever the chat engine just learned about a study goal onto
+    a workflow (creating one on first mention of a new subject, reusing the
+    existing one otherwise), and — once the engine says it has enough to
+    plan — actually build the roadmap and generate its tasks.
+
+    Returns (workflow_payload, just_built) — just_built is True only the
+    moment a plan's stages/tasks are freshly created, which is what tells the
+    frontend to auto-navigate to the workflow instead of just linking it."""
+    ctx = signal.context
+    canonical = (ctx.canonical_subject or ctx.subject_raw or "").strip()
+    if not canonical:
+        return None, False
+
+    workflow = db.find_study_workflow_by_subject(user_id, canonical)
+    if workflow is None:
+        workflow = db.create_study_workflow(
+            user_id, name=f"{canonical} Study Plan", subject=ctx.subject_raw or canonical,
+            canonical_subject=canonical,
+        )
+
+    patch: dict = {}
+    if ctx.exam_date:
+        patch["exam_date"] = ctx.exam_date
+    if ctx.hours_per_day:
+        patch["hours_per_day"] = ctx.hours_per_day
+    if ctx.target:
+        patch["target"] = ctx.target
+    if ctx.level:
+        patch["level"] = ctx.level
+    if ctx.syllabus_topics:
+        patch["syllabus_topics"] = ctx.syllabus_topics
+    if patch:
+        workflow = db.update_workflow(workflow["id"], user_id, **patch) or workflow
+
+    already_planned = bool(workflow.get("stages"))
+    if not (signal.ready_to_plan and not already_planned):
+        return _with_progress(workflow, db.list_tasks(user_id), now), False
+
+    days = study.days_remaining(workflow.get("exam_date"), now)
+    try:
+        plan = engine.generate_study_plan(ctx, now=now, days_remaining=days)
+    except Exception as err:  # noqa: BLE001 — never break the chat turn on this
+        print(f"[study] plan generation failed: {err!r}")
+        return _with_progress(workflow, db.list_tasks(user_id), now), False
+
+    stages: list[dict] = []
+    stage_task_pairs: list[tuple[str, "engine.StudyTaskDraft"]] = []
+    for order, stage_draft in enumerate(plan.stages):
+        stage_id = uuid.uuid4().hex
+        stages.append({"id": stage_id, "name": stage_draft.name, "order": order})
+        for t in stage_draft.tasks:
+            stage_task_pairs.append((stage_id, t))
+
+    deadlines = study.assign_initial_deadlines(
+        [(sid, {"estimated_minutes": t.estimated_minutes}) for sid, t in stage_task_pairs],
+        workflow.get("exam_date"), workflow.get("hours_per_day"), now=now,
+    )
+    canonical_subject = plan.canonical_subject or canonical
+    for (stage_id, t), deadline in zip(stage_task_pairs, deadlines):
+        db.create_task(
+            user_id, task_name=t.title, next_micro_step=t.description,
+            urgency=t.priority.value, estimated_minutes=t.estimated_minutes,
+            deadline=deadline, workflow_id=workflow["id"], step_id=stage_id,
+            subject=canonical_subject, topic=t.topic, tags=["study"],
+        )
+
+    workflow = db.update_workflow(
+        workflow["id"], user_id, canonical_subject=canonical_subject,
+        stages=stages, status="READY", plan_summary=plan.plan_summary,
+    ) or workflow
+    return _with_progress(workflow, db.list_tasks(user_id), now), True
+
+
 # --- Chat ---------------------------------------------------------------------
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, user: dict = Depends(get_current_user)) -> ChatResponse:
@@ -559,10 +673,12 @@ def chat(req: ChatRequest, user: dict = Depends(get_current_user)) -> ChatRespon
     # about, say, weekend habits.
     relevant_facts = memory.retrieve_relevant_facts(req.message, db.get_memory_facts(user["id"]))
     memory_facts = [f["fact"] for f in relevant_facts]
-    open_tasks = [_with_risk(t, now) for t in db.list_tasks(user["id"]) if t.get("status") not in ("COMPLETED", "ARCHIVED")]  # noqa: F821 (defined below, same module)
+    all_tasks = db.list_tasks(user["id"])
+    open_tasks = [_with_risk(t, now) for t in all_tasks if t.get("status") not in ("COMPLETED", "ARCHIVED")]  # noqa: F821 (defined below, same module)
+    study_workflows = _study_workflow_context(user["id"], all_tasks, now)
     try:
         result = engine.chat(req.message, [t.model_dump() for t in req.history], now=now, busy=busy,
-                              memory_facts=memory_facts, open_tasks=open_tasks)
+                              memory_facts=memory_facts, open_tasks=open_tasks, study_workflows=study_workflows)
     except Exception as err:  # noqa: BLE001
         print(f"[chat] Gemini call failed: {err!r}")
         if engine.is_quota_exhausted(err):
@@ -574,12 +690,18 @@ def chat(req: ChatRequest, user: dict = Depends(get_current_user)) -> ChatRespon
     for task in result.app_state.tasks_to_update:
         db.upsert_from_engine(task.model_dump(), user["id"])
 
+    workflow_payload, workflow_created = (None, False)
+    if result.app_state.study_signal.is_study_goal:
+        workflow_payload, workflow_created = _handle_study_signal(user["id"], result.app_state.study_signal, now)
+
     return ChatResponse(
         chat_ui=result.chat_ui,
         current_mode=result.app_state.current_mode,
         agentic_action=result.app_state.agentic_action,
         system_trigger=result.app_state.system_trigger,
         tasks=db.list_tasks(user["id"]),
+        workflow=workflow_payload,
+        workflow_created=workflow_created,
     )
 
 
@@ -679,6 +801,14 @@ def patch_task(task_id: int, body: TaskPatch, user: dict = Depends(get_current_u
     # Push the edit (new time, rename, or completion) out to Google Calendar.
     _resync_task_calendar(user["id"], updated)
 
+    # Study Planner: a task starting/finishing moves its workflow's status
+    # forward (READY -> ACTIVE -> COMPLETED). Best-effort — never blocks the
+    # task edit itself.
+    try:
+        _sync_study_workflow_on_task_change(user["id"], updated)
+    except Exception:  # noqa: BLE001
+        pass
+
     return _with_risk(updated) if updated else updated  # type: ignore[return-value]
 
 
@@ -755,6 +885,9 @@ def status(user: dict = Depends(get_current_user)) -> dict:
     # piled up since the last pass — see _run_auto_memory_summary's own gate,
     # this is best-effort and never raises.
     _run_auto_memory_summary(user["id"])  # noqa: F821 (defined below, same module)
+    # Study Planner: flag any study workflow that's slipped past its own
+    # schedule so the workflow page can offer to recalculate it.
+    _check_study_drift(user["id"])  # noqa: F821 (defined below, same module)
     return result
 
 
@@ -1221,7 +1354,17 @@ def generate_workflow_draft(body: WorkflowGenerateRequest, user: dict = Depends(
 
 @app.get("/api/workflows")
 def get_workflows(user: dict = Depends(get_current_user)) -> List[dict]:
-    return db.list_workflows(user["id"])
+    tasks = db.list_tasks(user["id"])
+    now = datetime.now()
+    return [_with_progress(w, tasks, now) for w in db.list_workflows(user["id"])]
+
+
+@app.get("/api/workflows/{workflow_id}")
+def get_workflow_detail(workflow_id: int, user: dict = Depends(get_current_user)) -> dict:
+    workflow = db.get_workflow(workflow_id, user["id"])
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found.")
+    return _with_progress(workflow, db.list_tasks(user["id"]))
 
 
 @app.post("/api/workflows")
@@ -1288,6 +1431,200 @@ def _run_due_workflows(user_id: str) -> None:
                 run_workflow_now(wf["id"], {"id": user_id})
             except Exception:  # noqa: BLE001 — never let a bad workflow break /api/status
                 pass
+
+
+# --- Study Planner: adaptive drift detection ----------------------------------
+def _check_study_drift(user_id: str) -> None:
+    """Piggybacked on the same /api/status poll as the other auto-triggers:
+    if an ACTIVE study workflow has an incomplete task whose deadline has
+    already passed, flag it NEEDS_REVIEW so the workflow page surfaces the
+    "you're behind — recalculate?" prompt instead of silently drifting."""
+    # Task.deadline is naive LOCAL time (see risk.py/scheduler.py) — compare
+    # against a naive local `now`, not `_as_utc` (that helper is for the
+    # naive-but-actually-UTC session timestamps written by db.now_iso()).
+    now = datetime.now()
+    tasks = db.list_tasks(user_id)
+    for wf in db.list_study_workflows(user_id):
+        if wf.get("status") not in ("READY", "ACTIVE"):
+            continue
+        wf_tasks = [t for t in tasks if t.get("workflow_id") == wf["id"]]
+        overdue = False
+        for t in wf_tasks:
+            if t.get("status") == "COMPLETED" or not t.get("deadline"):
+                continue
+            try:
+                if datetime.fromisoformat(t["deadline"]).replace(tzinfo=None) < now:
+                    overdue = True
+                    break
+            except ValueError:
+                continue
+        if overdue:
+            db.update_workflow(wf["id"], user_id, status="NEEDS_REVIEW")
+
+
+def _sync_study_workflow_on_task_change(user_id: str, task: Optional[dict]) -> None:
+    """A completed/started task belonging to a study workflow moves that
+    workflow's status forward — READY -> ACTIVE on first real work, anything
+    -> COMPLETED once every task in it is done. Best-effort, never raises."""
+    if not task or not task.get("workflow_id"):
+        return
+    workflow = db.get_workflow(task["workflow_id"], user_id)
+    if not workflow or workflow.get("kind") != "STUDY_PLAN":
+        return
+    wf_tasks = [t for t in db.list_tasks(user_id) if t.get("workflow_id") == workflow["id"]]
+    if not wf_tasks:
+        return
+    if all(t.get("status") == "COMPLETED" for t in wf_tasks):
+        if workflow.get("status") != "COMPLETED":
+            db.update_workflow(workflow["id"], user_id, status="COMPLETED")
+    elif workflow.get("status") in ("READY", "NEEDS_REVIEW") and any(
+        t.get("status") in ("IN_PROGRESS", "COMPLETED") for t in wf_tasks
+    ):
+        db.update_workflow(workflow["id"], user_id, status="ACTIVE")
+
+
+def _public_quiz(quiz: dict) -> dict:
+    """Never send correct_index to the client — grading happens server-side."""
+    return {
+        "id": quiz["id"],
+        "workflow_id": quiz["workflow_id"],
+        "subject": quiz["subject"],
+        "topics": quiz["topics"],
+        "submitted": quiz["submitted"],
+        "questions": [
+            {"question": q["question"], "options": q["options"], "topic": q["topic"]}
+            for q in quiz["questions"]
+        ],
+        "result": quiz.get("result"),
+    }
+
+
+@app.post("/api/workflows/{workflow_id}/quiz")
+def generate_workflow_quiz(workflow_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """Build a quiz targeted at the topics the user has actually just
+    finished studying in this workflow — not the subject as a whole."""
+    workflow = db.get_workflow(workflow_id, user["id"])
+    if not workflow or workflow.get("kind") != "STUDY_PLAN":
+        raise HTTPException(status_code=404, detail="Study workflow not found.")
+    if not engine.configured():
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured.")
+
+    tasks = db.list_tasks(user["id"])
+    progress = study.compute_progress(workflow, tasks)
+    topics = progress["quiz_topics"] or sorted({
+        t.get("topic") for t in tasks
+        if t.get("workflow_id") == workflow_id and t.get("topic") and t.get("status") == "COMPLETED"
+    })
+    if not topics:
+        raise HTTPException(status_code=400, detail="Complete at least one topic before taking a quiz.")
+    topics = list(topics)[:6]
+    subject = workflow.get("canonical_subject") or workflow.get("subject") or workflow["name"]
+    try:
+        draft = engine.generate_quiz(subject, topics)
+    except Exception as err:  # noqa: BLE001
+        print(f"[quiz] Gemini call failed: {err!r}")
+        if engine.is_quota_exhausted(err):
+            raise HTTPException(status_code=429, detail="Daily AI quota reached for this API key — try again tomorrow, or upgrade the Gemini API plan for a higher limit.")
+        if engine.is_transient(err):
+            raise HTTPException(status_code=503, detail="The AI model is busy. Try again in a moment.")
+        raise HTTPException(status_code=500, detail=str(err))
+    if not draft.questions:
+        raise HTTPException(status_code=500, detail="Could not generate a quiz right now.")
+
+    quiz = db.create_quiz(user["id"], workflow_id, subject, topics, [q.model_dump() for q in draft.questions])
+    return _public_quiz(quiz)
+
+
+@app.post("/api/workflows/{workflow_id}/quiz/{quiz_id}/submit")
+def submit_workflow_quiz(workflow_id: int, quiz_id: int, body: QuizSubmitRequest,
+                          user: dict = Depends(get_current_user)) -> dict:
+    quiz = db.get_quiz(quiz_id, user["id"])
+    if not quiz or quiz["workflow_id"] != workflow_id:
+        raise HTTPException(status_code=404, detail="Quiz not found.")
+    if quiz.get("submitted"):
+        raise HTTPException(status_code=400, detail="This quiz was already submitted.")
+
+    result = study.grade_quiz(quiz["questions"], body.answers)
+    db.submit_quiz(quiz_id, user["id"], body.answers, result)
+
+    workflow = db.get_workflow(workflow_id, user["id"])
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    history = (workflow.get("quiz_history") or []) + [{
+        "quiz_id": quiz_id, "subject": quiz["subject"], "topics": quiz["topics"],
+        "score_pct": result["score_pct"], "weak_topics": result["weak_topics"], "at": now_iso,
+    }]
+    # Keep only the latest reading per topic — a topic that's since improved
+    # (scored well on a later quiz) drops out of the weak list.
+    weak_map = {w["topic"]: w for w in (workflow.get("weak_topics") or [])}
+    for t in result["per_topic"]:
+        if t["score_pct"] < study.WEAK_TOPIC_THRESHOLD:
+            weak_map[t["topic"]] = {**t, "updated_at": now_iso}
+        else:
+            weak_map.pop(t["topic"], None)
+    workflow = db.update_workflow(
+        workflow_id, user["id"], quiz_history=history, weak_topics=list(weak_map.values()),
+    ) or workflow
+
+    # Auto-add a targeted revision task for each weak topic — reusing an
+    # existing open one for the same topic rather than duplicating it.
+    if result["weak_topics"]:
+        stages = workflow.get("stages") or []
+        revise_stage = next((s for s in stages if s["name"].strip().lower() in ("revise", "review", "revision")), None)
+        if revise_stage is None:
+            revise_stage = {"id": uuid.uuid4().hex, "name": "Revise", "order": len(stages)}
+            stages = stages + [revise_stage]
+            workflow = db.update_workflow(workflow_id, user["id"], stages=stages) or workflow
+
+        existing_tasks = db.list_tasks(user["id"])
+        for topic in result["weak_topics"]:
+            has_open_review = any(
+                t.get("workflow_id") == workflow_id and t.get("topic") == topic
+                and study.REVIEW_TAG in (t.get("tags") or []) and t.get("status") != "COMPLETED"
+                for t in existing_tasks
+            )
+            if has_open_review:
+                continue
+            db.create_task(
+                user["id"], task_name=f"Revise: {topic}",
+                next_micro_step=f"Go back over {topic} — you scored below {study.WEAK_TOPIC_THRESHOLD}% on the quiz.",
+                urgency="HIGH", estimated_minutes=30, workflow_id=workflow_id, step_id=revise_stage["id"],
+                subject=workflow.get("canonical_subject"), topic=topic, tags=["study", study.REVIEW_TAG],
+            )
+
+    workflow = db.get_workflow(workflow_id, user["id"])
+    return {
+        "quiz": _public_quiz(db.get_quiz(quiz_id, user["id"])),
+        "result": result,
+        "workflow": _with_progress(workflow, db.list_tasks(user["id"])),
+    }
+
+
+@app.post("/api/workflows/{workflow_id}/replan")
+def replan_study_workflow(workflow_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """Recalculate the remaining plan: redistribute every incomplete task's
+    deadline across the days actually left before the exam, respecting the
+    user's hours-per-day budget — used both from the "you're behind, adjust?"
+    prompt and any time the user wants to re-balance manually."""
+    workflow = db.get_workflow(workflow_id, user["id"])
+    if not workflow or workflow.get("kind") != "STUDY_PLAN":
+        raise HTTPException(status_code=404, detail="Study workflow not found.")
+
+    now = datetime.now()
+    wf_tasks = [t for t in db.list_tasks(user["id"]) if t.get("workflow_id") == workflow_id]
+    plan = study.redistribute_deadlines(wf_tasks, workflow.get("exam_date"), workflow.get("hours_per_day"), now=now)
+    for item in plan:
+        db.update_task(item["task_id"], user["id"], deadline=item["deadline"])
+
+    remaining = sum(1 for t in wf_tasks if t.get("status") != "COMPLETED")
+    days = study.days_remaining(workflow.get("exam_date"), now)
+    message = engine.plan_message(
+        f"The user fell behind on their {workflow.get('canonical_subject')} study plan. I just "
+        f"redistributed {remaining} remaining task(s) across the "
+        f"{days if days is not None else 'remaining'} day(s) left before their target date."
+    )
+    new_status = "ACTIVE" if workflow.get("status") not in ("COMPLETED", "PLANNING") else workflow.get("status")
+    workflow = db.update_workflow(workflow_id, user["id"], status=new_status) or workflow
+    return {"message": message, "workflow": _with_progress(workflow, db.list_tasks(user["id"]))}
 
 
 # --- Long-term behavioral memory ---------------------------------------------

@@ -1,8 +1,8 @@
 import React from 'react';
 import {
-  Plus, CalendarDays, Crosshair, Check, SkipForward, Trash2, Download, CalendarPlus, ListChecks,
+  Plus, CalendarDays, Crosshair, Check, SkipForward, Trash2, Download, CalendarPlus, ListChecks, GraduationCap,
 } from 'lucide-react';
-import { DecompositionPlan, Goal, Habit, Task, TaskRisk, Urgency } from '../types';
+import { DecompositionPlan, Goal, Habit, Task, TaskRisk, Urgency, Workflow } from '../types';
 import { api } from '../api';
 import GoalsPanel from '../components/GoalsPanel';
 import HabitsPanel from '../components/HabitsPanel';
@@ -48,6 +48,8 @@ interface Props {
   onDeleteHabit: (id: number) => void;
   onDecompose: (goal: string) => Promise<DecompositionPlan>;
   onCommitDecomposition: (plan: DecompositionPlan) => Promise<Task[]>;
+  workflows?: Workflow[];
+  onOpenWorkflow?: (id: number) => void;
 }
 
 const RISK_COLOR: Record<TaskRisk['risk_level'], 'green' | 'amber' | 'orange'> = {
@@ -66,8 +68,9 @@ export default function MyWorkScreen({
   tasks, goals, taskRisks, atRisk, overdue, showAdd, setShowAdd, newTask, setNewTask, busy,
   onAddTask, onPlanDay, onCycleStatus, onStartFocus, onSkip, onMarkDone, onRemove, onLogHours, onGcalUrl,
   habits, onAddGoal, onIncrementGoal, onDeleteGoal, onAddHabit, onCheckHabit, onDeleteHabit,
-  onDecompose, onCommitDecomposition,
+  onDecompose, onCommitDecomposition, workflows = [], onOpenWorkflow,
 }: Props) {
+  const workflowById = new Map(workflows.map((w) => [w.id, w]));
   const active = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
   const queued = tasks.filter((t) => t.status === 'TODO').length;
   const doneCount = tasks.filter((t) => t.status === 'COMPLETED').length;
@@ -189,6 +192,15 @@ export default function MyWorkScreen({
                     {' · '}updated {relTime(t.updated_at)}
                     {t.deadline ? ` · due ${fmtDeadline(t.deadline)}` : ''}
                   </p>
+                  {t.workflow_id != null && workflowById.has(t.workflow_id) && (
+                    <button
+                      onClick={() => onOpenWorkflow?.(t.workflow_id!)}
+                      className="inline-flex items-center gap-1 font-sans text-[10px] font-semibold uppercase tracking-wider text-accent-strong mt-1.5 hover:underline"
+                    >
+                      <GraduationCap className="w-3 h-3" />
+                      {workflowById.get(t.workflow_id)!.canonical_subject || workflowById.get(t.workflow_id)!.name}
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">{statePill(t)}</div>
               </div>

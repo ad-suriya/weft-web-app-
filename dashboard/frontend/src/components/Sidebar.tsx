@@ -3,7 +3,6 @@ import {
   Target,
   ListChecks,
   GitBranch,
-  Layers,
   MonitorSmartphone,
   Activity,
   Settings2,
@@ -14,7 +13,7 @@ import NavigationItem from './NavigationItem';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 
 // Console IA, ported from the WEFT redesign artifact.
-export type Section = 'today' | 'my-work' | 'workflows' | 'context' | 'devices' | 'activity' | 'settings';
+export type Section = 'today' | 'my-work' | 'workflows' | 'devices' | 'activity' | 'settings';
 
 interface NavItem {
   id: Section;
@@ -26,7 +25,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'today', label: 'Today', icon: Target },
   { id: 'my-work', label: 'My Work', icon: ListChecks },
   { id: 'workflows', label: 'Workflows', icon: GitBranch },
-  { id: 'context', label: 'Context', icon: Layers },
   { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'settings', label: 'Settings', icon: Settings2 },

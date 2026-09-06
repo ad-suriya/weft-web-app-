@@ -7,9 +7,12 @@ import {
   Goal,
   Habit,
   MemoryFact,
+  Quiz,
+  QuizSubmitResult,
   RecoveryResult,
   Reference,
   Reminder,
+  ReplanResult,
   RescheduleResult,
   ScheduleResult,
   SearchResults,
@@ -184,6 +187,17 @@ export const api = {
     fetch(`/api/workflows/${id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(body) }).then(handle<Workflow>),
   deleteWorkflow: (id: number) => fetch(`/api/workflows/${id}`, { method: 'DELETE', headers: authHeaders() }).then(handle<{ deleted: number }>),
   runWorkflow: (id: number) => fetch(`/api/workflows/${id}/run`, { method: 'POST', headers: authHeaders() }).then(handle<{ created: Task[] }>),
+
+  // Study Planner (Goal -> Workflow -> Tasks)
+  getWorkflow: (id: number) => fetch(`/api/workflows/${id}`, { headers: authHeaders() }).then(handle<Workflow>),
+  generateQuiz: (workflowId: number) =>
+    fetch(`/api/workflows/${workflowId}/quiz`, { method: 'POST', headers: authHeaders() }).then(handle<Quiz>),
+  submitQuiz: (workflowId: number, quizId: number, answers: number[]) =>
+    fetch(`/api/workflows/${workflowId}/quiz/${quizId}/submit`, {
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ answers }),
+    }).then(handle<QuizSubmitResult>),
+  replanWorkflow: (id: number) =>
+    fetch(`/api/workflows/${id}/replan`, { method: 'POST', headers: authHeaders() }).then(handle<ReplanResult>),
 
   // AI Task Decomposition
   decomposeGoal: (goal: string) =>

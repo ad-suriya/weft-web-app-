@@ -136,7 +136,7 @@ def get_task(task_id: int, user_id: str) -> Optional[dict]:
 def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estimated_minutes=30,
                 deadline=None, next_micro_step="", goal_id=None, url=None,
                 selected_text=None, tags=None, dependencies=None, completed_minutes=0,
-                workflow_id=None, step_id=None) -> dict:
+                workflow_id=None, step_id=None, subject=None, topic=None) -> dict:
     ts = now_iso()
     return _save("tasks", {
         "id": _next_id("tasks"),
@@ -155,9 +155,15 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
         "goal_id": goal_id,
         # Which workflow/step this task came from — the shared step-identity
         # contract other clients (extension, Android) resolve "current step"
-        # text through. Unrelated to goal_id.
+        # text through. Unrelated to goal_id. For a study-plan workflow,
+        # step_id is that workflow's stage id (see db.create_study_workflow).
         "workflow_id": workflow_id,
         "step_id": step_id,
+        # Study Planner grouping — which subject/topic this task belongs to,
+        # used for progress-by-subject and quiz targeting. None for tasks
+        # created any other way.
+        "subject": subject,
+        "topic": topic,
         "url": url,
         "selected_text": selected_text,
         "tags": tags or [],
@@ -174,7 +180,7 @@ def create_task(user_id: str, task_name, status="TODO", urgency="MEDIUM", estima
 def update_task(task_id: int, user_id: str, **fields) -> Optional[dict]:
     allowed = {"task_name", "status", "urgency", "estimated_minutes", "completed_minutes", "deadline",
                "next_micro_step", "scheduled_start", "scheduled_end", "goal_id", "workflow_id", "step_id",
-               "url", "selected_text", "tags", "calendar_event_id", "dependencies"}
+               "url", "selected_text", "tags", "calendar_event_id", "dependencies", "subject", "topic"}
     sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not sets:
         return get_task(task_id, user_id)
@@ -471,6 +477,7 @@ def create_workflow(user_id: str, name: str, sop_text: str, trigger_type: str,
     return _save("workflows", {
         "id": _next_id("workflows"),
         "user_id": user_id,
+        "kind": "AUTOMATION",
         "name": name,
         "sop_text": sop_text,
         "trigger_type": trigger_type,
@@ -483,8 +490,53 @@ def create_workflow(user_id: str, name: str, sop_text: str, trigger_type: str,
     })
 
 
+# Fields a Study Planner workflow carries on top of the base AI Workflow
+# Builder shape above — same "workflows" collection, distinguished by
+# kind="STUDY_PLAN". `stages` are {id, name, order} — a task's existing
+# `step_id` points at a stage's id here, exactly like it points at an
+# AUTOMATION workflow's step id; no new linkage concept was needed.
+def create_study_workflow(user_id: str, name: str, subject: str, canonical_subject: str,
+                           goal_summary: str = "") -> dict:
+    ts = now_iso()
+    return _save("workflows", {
+        "id": _next_id("workflows"),
+        "user_id": user_id,
+        "kind": "STUDY_PLAN",
+        "name": name,
+        "sop_text": "",
+        "trigger_type": "MANUAL",
+        "trigger_match": "",
+        "steps": [],
+        "active": True,
+        "last_run": None,
+        # Study Planner state
+        "subject": subject,
+        "canonical_subject": canonical_subject,
+        "goal_summary": goal_summary,
+        "exam_date": None,
+        "hours_per_day": None,
+        "target": "",
+        "level": "",
+        "syllabus_topics": [],
+        "status": "PLANNING",
+        "stages": [],
+        "plan_summary": "",
+        "weak_topics": [],
+        "quiz_history": [],
+        "goal_id": None,
+        "created_at": ts,
+        "updated_at": ts,
+    })
+
+
 def update_workflow(workflow_id: int, user_id: str, **fields) -> Optional[dict]:
-    allowed = {"name", "sop_text", "trigger_type", "trigger_match", "steps", "active", "last_run"}
+    allowed = {
+        "name", "sop_text", "trigger_type", "trigger_match", "steps", "active", "last_run",
+        # Study Planner fields
+        "kind", "subject", "canonical_subject", "goal_summary", "exam_date", "hours_per_day",
+        "target", "level", "syllabus_topics", "status", "stages", "plan_summary", "weak_topics",
+        "quiz_history", "goal_id",
+    }
     sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not sets:
         return get_workflow(workflow_id, user_id)
@@ -494,6 +546,60 @@ def update_workflow(workflow_id: int, user_id: str, **fields) -> Optional[dict]:
 
 def delete_workflow(workflow_id: int, user_id: str) -> bool:
     return _delete("workflows", workflow_id, user_id)
+
+
+def find_study_workflow_by_subject(user_id: str, canonical_subject: str) -> Optional[dict]:
+    """Reuse an existing (not-yet-completed) study workflow for the same
+    subject instead of creating a near-duplicate — same subject means a
+    case-insensitive exact match on canonical_subject, which the chat engine
+    is instructed to keep consistent across turns."""
+    subject_lc = canonical_subject.strip().lower()
+    candidates = [
+        w for w in list_workflows(user_id)
+        if w.get("kind") == "STUDY_PLAN"
+        and (w.get("canonical_subject") or "").strip().lower() == subject_lc
+        and w.get("status") != "COMPLETED"
+    ]
+    return max(candidates, key=lambda w: w["id"]) if candidates else None
+
+
+def list_study_workflows(user_id: str) -> list[dict]:
+    return [w for w in list_workflows(user_id) if w.get("kind") == "STUDY_PLAN"]
+
+
+# --- Quizzes (Study Planner review) -------------------------------------------
+def create_quiz(user_id: str, workflow_id: int, subject: str, topics: list[str], questions: list[dict]) -> dict:
+    ts = now_iso()
+    return _save("quizzes", {
+        "id": _next_id("quizzes"),
+        "user_id": user_id,
+        "workflow_id": workflow_id,
+        "subject": subject,
+        "topics": topics,
+        "questions": questions,  # includes correct_index — never sent to the client as-is
+        "submitted": False,
+        "answers": None,
+        "result": None,
+        "created_at": ts,
+        "updated_at": ts,
+    })
+
+
+def get_quiz(quiz_id: int, user_id: str) -> Optional[dict]:
+    return _get("quizzes", quiz_id, user_id)
+
+
+def submit_quiz(quiz_id: int, user_id: str, answers: list[int], result: dict) -> Optional[dict]:
+    return _patch("quizzes", quiz_id, {
+        "submitted": True, "answers": answers, "result": result, "updated_at": now_iso(),
+    }, user_id)
+
+
+def list_quizzes(user_id: str, workflow_id: Optional[int] = None) -> list[dict]:
+    items = _all("quizzes", user_id)
+    if workflow_id is not None:
+        items = [q for q in items if q.get("workflow_id") == workflow_id]
+    return sorted(items, key=lambda q: q["id"])
 
 
 # --- Projects -----------------------------------------------------------------
@@ -622,7 +728,7 @@ def set_focus_prefs(user_id: str, **fields) -> dict:
 # per-user subcollection handled separately.
 _USER_COLLECTIONS = (
     "tasks", "workflows", "sessions", "goals", "habits", "habit_logs",
-    "reminders", "projects", "task_events", "chats", "references",
+    "reminders", "projects", "task_events", "chats", "references", "quizzes",
 )
 
 

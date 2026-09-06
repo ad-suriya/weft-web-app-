@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from google import genai
 from google.genai import types
@@ -67,6 +67,47 @@ RULES:
   when deadlines should be locked into a calendar; otherwise NONE.
 - Only emit an agentic_action when you actually generated starter content; \
   otherwise action_type NONE with empty action_content.
+
+STUDY GOAL DETECTION (fills `study_signal`): the user may express a goal to \
+learn or prepare for a subject/exam rather than a single one-off task — e.g. \
+"I want to study CN", "I need to prepare for my OS exam", "help me prepare for \
+automata". This is different from a plain reminder ("remind me to submit my \
+assignment") and different from a one-off factual question ("what is \
+subnetting?") — only set is_study_goal true for an actual intent to build a \
+study plan / prepare for a subject or exam.
+
+When is_study_goal is true:
+- Resolve the subject to its canonical full name and put it in \
+  study_signal.context.canonical_subject (e.g. "CN" -> "Computer Networks", \
+  "DBMS" -> "Database Management Systems", "OS" -> "Operating Systems", \
+  "automata" -> "Formal Language and Automata Theory"). Keep study_signal.\
+  context.subject_raw as whatever the user actually typed. If an EXISTING \
+  STUDY WORKFLOW (given to you below) already matches this subject, reuse its \
+  exact canonical_subject spelling — never create a near-duplicate name for \
+  the same subject.
+- Fill every context field you can confidently infer from THIS message, the \
+  conversation history, or the user's existing tasks/goals/workflows given \
+  below (exam_date as an ISO date, hours_per_day as a number, target as free \
+  text like "pass"/"score 90%"/"understand deeply"/"finish the syllabus", \
+  level as free text, syllabus_topics as a flat list ONLY if the user actually \
+  gave you topics). Never leave a field you can reasonably infer empty.
+- ready_to_plan is true once you have at minimum: canonical_subject, and \
+  either an exam_date OR enough of a sense of urgency/scope to build a \
+  realistic plan anyway (e.g. "just want to learn it, no exam" — that's fine, \
+  plan around a sensible default). hours_per_day is valuable but don't block \
+  forever on it — if the user has already answered one clarifying question \
+  and given a real signal, prefer proceeding with a reasonable assumption \
+  over asking a third question.
+- If NOT ready_to_plan, ask exactly ONE concise, highest-value clarifying \
+  question in agent_message (never a multi-part interrogation, never ask for \
+  something already known from context) — e.g. "When is your exam?" then, \
+  next turn, "How much time can you realistically study each day?" — and \
+  leave suggested_quick_replies as short answer options for that one question.
+- If ready_to_plan, agent_message should be a short, warm confirmation that \
+  you're building the plan now (the backend generates the actual roadmap \
+  right after this call) — do not ask anything further.
+- If is_study_goal is false, leave study_signal.context fields empty/null and \
+  ready_to_plan false — proceed with the normal behaviors above.
 """
 
 
@@ -123,11 +164,28 @@ class TaskUpdate(BaseModel):
     next_micro_step: str
 
 
+class StudyContext(BaseModel):
+    subject_raw: str = ""
+    canonical_subject: str = ""
+    exam_date: Optional[str] = None  # ISO date, e.g. 2026-09-15
+    hours_per_day: Optional[float] = None
+    target: str = ""
+    level: str = ""
+    syllabus_topics: List[str] = []
+
+
+class StudySignal(BaseModel):
+    is_study_goal: bool = False
+    ready_to_plan: bool = False
+    context: StudyContext = Field(default_factory=StudyContext)
+
+
 class AppState(BaseModel):
     current_mode: Mode
     agentic_action: AgenticAction
     tasks_to_update: List[TaskUpdate]
     system_trigger: SystemTrigger
+    study_signal: StudySignal = Field(default_factory=StudySignal)
 
 
 class EngineResponse(BaseModel):
@@ -195,7 +253,8 @@ def _generate(contents, system_instruction, schema, max_attempts: int = 4):
 def chat(message: str, history: list[dict], now: Optional[datetime] = None,
          busy: Optional[list[tuple[datetime, datetime]]] = None,
          memory_facts: Optional[list[str]] = None,
-         open_tasks: Optional[list[dict]] = None) -> EngineResponse:
+         open_tasks: Optional[list[dict]] = None,
+         study_workflows: Optional[list[dict]] = None) -> EngineResponse:
     now = now or datetime.now()
     system = f"{BASE_SYSTEM}\n\nCurrent datetime (local): {now.replace(microsecond=0).isoformat()}"
     if open_tasks:
@@ -223,6 +282,25 @@ def chat(message: str, history: list[dict], now: Optional[datetime] = None,
             "When inferring a deadline or implying a time commitment, be aware a task can't "
             "realistically be scheduled inside these windows — factor that into urgency/estimates "
             "and mention the conflict in agent_message if it's relevant."
+        )
+    if study_workflows:
+        # Ground subject canonicalization and "how am I doing with X" style
+        # questions in the user's REAL study workflows — never invent a
+        # second workflow for a subject that already has one, and never
+        # answer a progress question from thin air.
+        lines = []
+        for w in study_workflows[:10]:
+            lines.append(
+                f"- \"{w['canonical_subject']}\" (workflow id {w['id']}, status {w['status']}"
+                f"{', exam ' + w['exam_date'] if w.get('exam_date') else ''}): "
+                f"{w['completed']}/{w['total']} tasks complete"
+                + (f", weak topics: {', '.join(w['weak_topics'])}" if w.get('weak_topics') else "")
+            )
+        system += (
+            "\n\nThe user's EXISTING study workflows (ground truth — reuse the exact "
+            "canonical_subject spelling shown here if the user means one of these; answer "
+            "\"how am I doing\" style questions from these real numbers, never guess):\n"
+            + "\n".join(lines)
         )
     if memory_facts:
         # Long-term behavioral memory (memory.py) — compact, durable facts
@@ -425,6 +503,129 @@ def decompose_goal(goal: str) -> DecompositionPlan:
     if not text:
         raise RuntimeError("No content returned from Gemini.")
     return DecompositionPlan.model_validate_json(text)
+
+
+# --- Study Planner (Goal -> Workflow) ----------------------------------------
+class StudyTaskDraft(BaseModel):
+    title: str  # a specific, actionable task, e.g. "Review the OSI model and
+    # write down the function of each of the 7 layers"
+    description: str  # 1 short sentence naming exactly what "done" looks like
+    topic: str  # short topic label used for progress/quiz grouping, e.g. "OSI Model"
+    estimated_minutes: int
+    priority: Urgency
+
+
+class StudyStageDraft(BaseModel):
+    name: str  # e.g. "Learn", "Practice", "Revise", "Test" — or subject-appropriate
+    tasks: List[StudyTaskDraft]
+
+
+class StudyPlan(BaseModel):
+    canonical_subject: str
+    stages: List[StudyStageDraft]
+    plan_summary: str  # 1-2 sentences: what the plan covers and why it's shaped this way
+
+
+STUDY_PLAN_SYSTEM = """\
+You are a study planner. Given a subject and the student's real constraints \
+(exam date, hours available per day, target, current level, and any syllabus \
+topics they already gave you), produce a realistic, executable study \
+roadmap as a small number of stages (e.g. Learn / Practice / Revise / Test — \
+adapt these names and count to whatever actually fits the subject and time \
+available; a 2-day cram needs fewer stages than a 3-week plan).
+
+RULES:
+- Generate the syllabus/topic breakdown yourself using your own knowledge of \
+  the subject, UNLESS the student already gave you syllabus_topics — if they \
+  did, build the plan around exactly those topics instead of inventing your \
+  own.
+- Every task title must be concrete and actionable, never vague filler like \
+  "Study X" alone — name what to actually do (e.g. "Study OSI model — \
+  understand all 7 layers and map 2-3 common protocols to each", not "Study \
+  OSI model").
+- Respect the time budget: sum(estimated_minutes across all tasks) should be \
+  realistic for (days until exam) x (hours per day) — don't plan 10 hours of \
+  work for someone with 2 hours/day and 2 days left. If time is tight, cover \
+  fewer topics at good depth rather than padding a shallow pass over \
+  everything.
+- The target shapes depth: "just pass" -> prioritize the most exam-relevant \
+  topics and exam-oriented revision; "score 90%+" or "understand deeply" -> \
+  broader coverage, past-question practice, and more than one revision pass; \
+  "finish the syllabus" -> ensure every topic is covered at least once.
+- Always include practice/revision work near the end (not just first-pass \
+  learning) unless the time budget is too small for it.
+- topic on each task should be a short, consistent label (2-4 words) shared \
+  by every task about that same concept — it's used to group progress and \
+  target quiz questions later, so don't invent a new label per task if \
+  several tasks cover the same topic.
+- plan_summary: one or two sentences a student would actually want to read — \
+  what's covered and the reasoning behind the shape of the plan (time \
+  budget, target, what's prioritized).
+"""
+
+
+def generate_study_plan(context: StudyContext, now: Optional[datetime] = None,
+                         days_remaining: Optional[int] = None) -> StudyPlan:
+    now = now or datetime.now()
+    prompt = (
+        f"Subject: {context.canonical_subject or context.subject_raw}\n"
+        f"Exam date: {context.exam_date or 'not specified'}"
+        + (f" ({days_remaining} day(s) from today)" if days_remaining is not None else "") + "\n"
+        f"Hours available per day: {context.hours_per_day if context.hours_per_day else 'not specified, assume 2'}\n"
+        f"Target: {context.target or 'not specified, assume a solid working understanding'}\n"
+        f"Current level: {context.level or 'not specified, assume beginner-to-intermediate'}\n"
+        f"Syllabus topics the student already gave: "
+        f"{', '.join(context.syllabus_topics) if context.syllabus_topics else 'none — infer the syllabus yourself'}\n"
+        f"Today's date: {now.date().isoformat()}"
+    )
+    response = _generate([{"role": "user", "parts": [{"text": prompt}]}], STUDY_PLAN_SYSTEM, StudyPlan)
+    parsed = getattr(response, "parsed", None)
+    if isinstance(parsed, StudyPlan):
+        return parsed
+    text = getattr(response, "text", None)
+    if not text:
+        raise RuntimeError("No content returned from Gemini.")
+    return StudyPlan.model_validate_json(text)
+
+
+# --- Study Planner: Quiz / Review ---------------------------------------------
+class QuizQuestionDraft(BaseModel):
+    question: str
+    options: List[str]  # exactly 4
+    correct_index: int  # 0-3
+    topic: str  # must be one of the topics given in the prompt
+
+
+class QuizDraft(BaseModel):
+    questions: List[QuizQuestionDraft]
+
+
+QUIZ_SYSTEM = """\
+You write a short multiple-choice quiz to check a student's understanding of \
+specific topics they just studied — NOT a generic quiz about the subject as a \
+whole, only these exact topics.
+
+RULES:
+- Exactly 4 options per question, exactly one correct (correct_index 0-3).
+- Roughly one to three questions per topic given, evenly spread across all of \
+  them — never skip a given topic entirely.
+- topic on each question must be copied verbatim from the list given to you.
+- Questions test real understanding (apply/compare/identify), not trivial \
+  recall of a single fact.
+- Plausible, specific distractors — never an obviously-wrong joke option.
+"""
+
+
+def generate_quiz(subject: str, topics: List[str]) -> QuizDraft:
+    prompt = f"Subject: {subject}\nTopics to quiz on: {', '.join(topics)}"
+    response = _generate([{"role": "user", "parts": [{"text": prompt}]}], QUIZ_SYSTEM, QuizDraft)
+    parsed = getattr(response, "parsed", None)
+    if isinstance(parsed, QuizDraft):
+        return parsed
+    text = getattr(response, "text", None)
+    if not text:
+        raise RuntimeError("No content returned from Gemini.")
+    return QuizDraft.model_validate_json(text)
 
 
 # --- Long-term behavioral memory --------------------------------------------

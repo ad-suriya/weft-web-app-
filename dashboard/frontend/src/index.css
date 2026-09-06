@@ -48,6 +48,12 @@
   --color-danger-strong: #A6532A;
   --color-info: #6E64C4;
 
+  /* Focus — a distinct accent for "Start Focus" CTAs specifically, so they
+     read as a different kind of action from the everyday green primary
+     button, while staying in the same muted, editorial family. */
+  --color-focus: #6E64C4;
+  --color-focus-strong: #564DA0;
+
   /* Disabled */
   --color-disabled: #23271F;
 

@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Play, Pause, RotateCcw, Check, Crosshair, ArrowRight, Clock, SkipForward, Send, Mic, Loader2, RefreshCw,
-  ListPlus, Target, NotebookPen,
+  ListPlus, Target, NotebookPen, GraduationCap,
 } from 'lucide-react';
-import { ChatMessage, FocusPrefs, Habit, Session, Task } from '../types';
-import { CARD, CARD_HERO, BTN_SM, Eyebrow, Pill, Button, Card } from './ui';
+import { ChatMessage, FocusPrefs, Habit, Session, Task, Workflow } from '../types';
+import { CARD, CARD_HERO, BTN_SM, Eyebrow, Pill, Button, Card, Meter } from './ui';
 import FocusBridge from './FocusBridge';
 import { fmtTimer, fmtDeadline, fmtClock, dayLabel, relTime, fmtDuration } from './format';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -27,6 +27,9 @@ interface Props {
   onMarkDone: (t: Task) => void;
   onSkip: (t: Task) => void;
   onGoMyWork: () => void;
+  // Study Planner — the user's currently active study plan, if any.
+  studyWorkflow?: Workflow | null;
+  onOpenWorkflow?: (id: number) => void;
   focusPrefs: FocusPrefs;
   onToggleStudyFocus: () => void;
   habits: Habit[];
@@ -66,7 +69,7 @@ function greeting(): string {
 
 export default function TodayScreen({
   task, isActive, modeBlurb, pomoSeconds, pomoRunning, lastSession, lastSessionTask, scheduled, atRisk, goalTitle,
-  onToggleTimer, onResetTimer, onStartFocus, onMarkDone, onSkip, onGoMyWork,
+  onToggleTimer, onResetTimer, onStartFocus, onMarkDone, onSkip, onGoMyWork, studyWorkflow, onOpenWorkflow,
   focusPrefs, onToggleStudyFocus, habits, onCheckHabit,
   messages, hasConversation, chatLoading, thinking, input, setInput, onSend, onNewChat,
   quickReplies, chatError, listening, voiceSupported, onToggleVoice,
@@ -290,6 +293,31 @@ export default function TodayScreen({
         )}
       </AnimatePresence>
 
+      {!concentrated && studyWorkflow && studyWorkflow.status !== 'PLANNING' && studyWorkflow.status !== 'COMPLETED' && (
+        <Card
+          variant="interactive"
+          onClick={() => onOpenWorkflow?.(studyWorkflow.id)}
+          className="p-5 border-l-[4px] border-l-accent flex items-center justify-between gap-4 flex-wrap"
+        >
+          <div className="min-w-0">
+            <Eyebrow tone="green">
+              <span className="inline-flex items-center gap-1.5"><GraduationCap className="w-3.5 h-3.5" /> Active study plan</span>
+            </Eyebrow>
+            <h3 className="font-serif text-lg font-semibold tracking-tight mt-0.5 truncate">
+              {studyWorkflow.canonical_subject || studyWorkflow.subject || studyWorkflow.name}
+            </h3>
+            <p className="font-sans text-[11.5px] text-ink-soft mt-1">
+              {studyWorkflow.progress?.days_remaining != null ? `Exam in ${studyWorkflow.progress.days_remaining}d · ` : ''}
+              {studyWorkflow.progress ? `${studyWorkflow.progress.completed}/${studyWorkflow.progress.total} complete` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            <Meter value={studyWorkflow.progress?.overall_pct ?? 0} className="w-28" />
+            <ArrowRight className="w-4 h-4 text-accent-strong" />
+          </div>
+        </Card>
+      )}
+
       {task && <Eyebrow tone="ink">Current work</Eyebrow>}
 
       <div className={`grid grid-cols-1 gap-5 ${concentrated ? '' : 'lg:grid-cols-[1.7fr_1fr]'}`}>
@@ -382,7 +410,7 @@ export default function TodayScreen({
                     </Button>
                   </>
                 ) : (
-                  <Button variant="primary" onClick={() => onStartFocus(task)}>
+                  <Button variant="focus" onClick={() => onStartFocus(task)}>
                     <Crosshair className="w-3.5 h-3.5" /> Start focus
                   </Button>
                 )}
@@ -445,7 +473,7 @@ export default function TodayScreen({
               ~{fmtDuration(remaining || est)} · {isActive ? 'session running' : 'not started'}
             </p>
           </div>
-          <Button variant="primary" onClick={() => onStartFocus(task)}>
+          <Button variant="focus" onClick={() => onStartFocus(task)}>
             {isActive ? 'Back to it' : 'Start'}
           </Button>
         </div>
