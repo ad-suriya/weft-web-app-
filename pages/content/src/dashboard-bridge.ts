@@ -46,6 +46,21 @@ function readDashboardAuth(): DashboardAuthData {
   }
 }
 
+// The dashboard's /api/sessions sync loop (App.tsx) fires this whenever a
+// real focus session starts, stops, pauses, or resumes. We forward it to the
+// background script, which turns the extension's own distraction-site
+// blocking on/off to match — without this, starting focus on the dashboard
+// never blocked anything in the browser (blocking used to be enabled only
+// from the extension popup). The background's 1-min reconcile alarm is the
+// backstop for when no dashboard tab is open to send this.
+function relayFocusToBackground(active: boolean) {
+  chrome.runtime.sendMessage({ type: 'DASHBOARD_FOCUS_CHANGED', payload: { active } }, () => {
+    if (chrome.runtime.lastError) {
+      console.log('[Dashboard Bridge] Focus relay note:', chrome.runtime.lastError.message);
+    }
+  });
+}
+
 function relayToBackground(authData: DashboardAuthData) {
   chrome.runtime.sendMessage(
     {
@@ -67,22 +82,6 @@ function relayToBackground(authData: DashboardAuthData) {
   );
 }
 
-function relayFocusSessionChange(detail: { active: boolean; taskName?: string; stepText?: string }) {
-  chrome.runtime.sendMessage(
-    {
-      type: detail.active ? 'FOCUS_STARTED' : 'FOCUS_ENDED',
-      payload: detail.active ? { taskName: detail.taskName, stepText: detail.stepText } : {},
-    },
-    response => {
-      if (chrome.runtime.lastError) {
-        console.log('[Dashboard Bridge] Focus session message sent with note:', chrome.runtime.lastError.message);
-      } else {
-        console.log('[Dashboard Bridge] Focus session message sent:', response);
-      }
-    },
-  );
-}
-
 export function initializeDashboardBridge(): void {
   console.log('[Dashboard Bridge] Content script loaded');
 
@@ -95,14 +94,10 @@ export function initializeDashboardBridge(): void {
     relayToBackground(event.detail);
   });
 
-  // Same idea for focus sessions: the dashboard's own Start Focus / timer
-  // end has no direct access to chrome.storage (blockingStorage lives in
-  // extension-only storage), so it dispatches this DOM event and the
-  // background service worker is the one that actually enables/disables
-  // distraction blocking (see chrome-extension/src/background/index.ts).
-  window.addEventListener('weftFocusSessionChanged', (event: any) => {
-    console.log('[Dashboard Bridge] Focus session changed event received:', event.detail);
-    relayFocusSessionChange(event.detail);
+  window.addEventListener('dashboardFocusChanged', (event: any) => {
+    const active = !!event?.detail?.active;
+    console.log('[Dashboard Bridge] Focus changed event received:', active);
+    relayFocusToBackground(active);
   });
 
   // Active pull: the popup's "Already Logged In? Click Here" sends this

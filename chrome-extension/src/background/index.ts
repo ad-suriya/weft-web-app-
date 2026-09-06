@@ -1,5 +1,11 @@
 import 'webextension-polyfill';
-import { exampleThemeStorage, authStorage, focusSessionStorage, blockingStorage } from '@extension/storage';
+import {
+  exampleThemeStorage,
+  authStorage,
+  focusSessionStorage,
+  blockingStorage,
+  blockedSitesStorage,
+} from '@extension/storage';
 import { scoreRelevance } from '@extension/shared';
 
 exampleThemeStorage.get().then(theme => {
@@ -130,28 +136,46 @@ async function checkContextSwitch(): Promise<void> {
 // blockingStorage (chrome.storage.local — enable/lockToSite/disable) and the
 // focus session it's meant to last exactly as long as (focusSessionStorage,
 // backed by the SAME backend /sessions the dashboard's own Start/Complete
-// buttons write to) are two separate stores. `disable()` was previously only
-// ever called from the popup's own Stop button — so ending the session any
-// other way (finishing/completing the task from the DASHBOARD, the popup
-// simply not being open when it ended, a duration running out) left
-// blockedSites/allowedSite active with no session left to ever turn it off,
-// silently blocking youtube.com/instagram.com/etc. forever. This alarm is the
-// backstop that catches that regardless of whether the popup is open: it runs
-// independent of any popup UI and is the source of truth reconciliation.
+// buttons write to) are two separate stores. This keeps them in lockstep in
+// BOTH directions:
+//   - a running (non-paused) session with no blocking active -> enable it,
+//     using the user's own blocked-sites list. This is what makes "start
+//     focus on the dashboard" actually block distracting sites in the
+//     browser; previously blocking was only ever turned on from the popup.
+//   - blocking active with no running session (ended/completed from the
+//     dashboard, timer ran out, session paused for a break, popup never
+//     open) -> disable it, so distracting sites don't stay blocked forever.
+// The captured-task site lock (mode: 'allowlist') has its own lifecycle and
+// is never touched here. Runs on a 1-min alarm as the backstop for when no
+// dashboard tab is open; the dashboard-bridge's DASHBOARD_FOCUS_CHANGED
+// message triggers the same check immediately when a tab IS open.
 const BLOCKING_RECONCILE_ALARM = 'weft-blocking-reconcile';
 const BLOCKING_RECONCILE_PERIOD_MINUTES = 1;
 
 async function reconcileBlocking(): Promise<void> {
   const blocking = await blockingStorage.get();
-  if (!blocking.isActive) return;
+  // The captured-task lock is not tied to a backend session — leave it alone.
+  if (blocking.isActive && blocking.mode === 'allowlist') return;
+
+  let running: boolean;
   try {
     const current = await focusSessionStorage.getCurrent();
-    if (!current) await blockingStorage.disable();
+    // FocusSession.isActive is already "not ended AND not paused" — a paused
+    // session (break taken from the dashboard) should lift blocking.
+    running = !!current && current.isActive;
   } catch (err) {
     // Network/auth hiccup — fail safe by leaving blocking exactly as it was
-    // rather than risk unblocking distracting sites mid-session on a false
-    // "no session" read. The next minute's check tries again.
+    // rather than risk either unblocking mid-session or trapping the user on
+    // a false read. The next minute's check tries again.
     console.error('[Background] Blocking reconcile check failed:', err);
+    return;
+  }
+
+  if (running && !blocking.isActive) {
+    const sites = await blockedSitesStorage.get();
+    await blockingStorage.enable(sites);
+  } else if (!running && blocking.isActive) {
+    await blockingStorage.disable();
   }
 }
 
@@ -183,39 +207,33 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
 chrome.runtime.onMessage.addListener(async (message: any, sender, sendResponse) => {
   try {
     if (message.type === 'FOCUS_STARTED') {
+      // Context-switch (drift) detection only — distraction-site blocking is
+      // handled independently by reconcileBlocking()/DASHBOARD_FOCUS_CHANGED
+      // above, which is the source of truth for both the popup and the
+      // dashboard regardless of which one started the session.
       console.log('[Background] Focus started:', message.payload);
       const { taskName, stepText } = message.payload || {};
-      // Distraction blocking (blockingStorage) is extension-only storage — a
-      // plain page (the dashboard) can't touch it directly, so every session
-      // start funnels through here regardless of which surface started it
-      // (extension popup or dashboard-bridge). The popup already calls
-      // blockingStorage.enable() itself with its own custom site list before
-      // sending this message, so this only actually enables (with the
-      // product-default list) when blocking wasn't already on — otherwise a
-      // dashboard-originated message would blow away a popup-set custom list.
-      const blocking = await blockingStorage.get();
-      if (!blocking.isActive) await blockingStorage.enable();
       if (taskName) {
         await setFocusContext({ taskName, stepText, lowRelevanceSince: null, notified: false });
         chrome.alarms.create(CONTEXT_CHECK_ALARM, { periodInMinutes: CONTEXT_CHECK_PERIOD_MINUTES });
       }
       sendResponse({ success: true });
-    } else if (message.type === 'FOCUS_ENDED') {
+    } else if (message.type === 'FOCUS_ENDED' || message.type === 'FOCUS_PAUSED') {
       console.log('[Background]', message.type);
-      await blockingStorage.disable();
-      await setFocusContext(null);
-      chrome.alarms.clear(CONTEXT_CHECK_ALARM);
-      sendResponse({ success: true });
-    } else if (message.type === 'FOCUS_PAUSED') {
-      console.log('[Background]', message.type);
-      // A pause keeps the session alive (see reconcileBlocking above) —
-      // blocking intentionally stays on, only the drift-detection context
-      // clears so a paused session doesn't nag about being "off-task".
       await setFocusContext(null);
       chrome.alarms.clear(CONTEXT_CHECK_ALARM);
       sendResponse({ success: true });
     } else if (message.type === 'FOCUS_RESUMED') {
       console.log('[Background] Focus resumed');
+      sendResponse({ success: true });
+    } else if (message.type === 'DASHBOARD_FOCUS_CHANGED') {
+      // The dashboard-bridge content script relays this from a dashboard tab
+      // whenever a focus session starts/stops/pauses/resumes. Re-run the same
+      // reconciliation the 1-min alarm does, but now — no up-to-a-minute wait.
+      // The payload's `active` is only a hint; reconcileBlocking re-reads the
+      // backend so it stays correct even if the event is stale.
+      console.log('[Background] Dashboard focus changed:', message.payload);
+      await reconcileBlocking();
       sendResponse({ success: true });
     } else if (message.type === 'TASK_CREATED') {
       console.log('[Background] Task created:', message.payload);

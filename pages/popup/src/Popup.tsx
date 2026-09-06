@@ -99,17 +99,20 @@ function Popup() {
         // Site blocking (blockingStorage) and the focus session it belongs to
         // (focusSessionStorage, backed by the SAME backend /sessions the
         // dashboard's own Start/Complete flow writes to) are two separate
-        // storages. `enable`/`lockToSite` are only ever called alongside
-        // starting a session, but the only place that ever called `disable`
-        // was this popup's own Stop button — so ending the session from the
-        // dashboard instead (finishing the task, letting the timer run out,
-        // just closing the tab) left blockedSites/allowedSite active forever,
-        // with no session left to ever stop it. Session state is the source
-        // of truth: no active session means blocking has nothing to attach
-        // to, so clear it here too, not just on the popup's own Stop click.
-        if (!activeSession) {
-          const currentBlocking = await blockingStorage.get();
-          if (currentBlocking.isActive) {
+        // storages. Keep them in lockstep in BOTH directions off the backend
+        // session, which is the source of truth: a running (non-paused)
+        // session means blocking should be on (this is how a session started
+        // from the DASHBOARD gets sites blocked here); no running session —
+        // ended, completed, timer ran out, or paused for a break — means it
+        // should be off. The captured-task lock (mode 'allowlist') has its
+        // own lifecycle and is left alone. The background's reconcile alarm
+        // does the same thing when this popup isn't open.
+        const currentBlocking = await blockingStorage.get();
+        if (currentBlocking.mode !== 'allowlist') {
+          const running = !!activeSession && activeSession.isActive;
+          if (running && !currentBlocking.isActive) {
+            await blockingStorage.enable(await blockedSitesStorage.get());
+          } else if (!running && currentBlocking.isActive) {
             await blockingStorage.disable();
           }
         }
