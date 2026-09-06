@@ -35,7 +35,7 @@ MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 USE_VERTEX = bool(PROJECT_ID)
 
 BASE_SYSTEM = """\
-You are the intelligence engine for "WEFT," a proactive \
+You are the intelligence engine for "Task Weave," a proactive \
 productivity app that cures procrastination by forcing meaningful, low-friction \
 action instead of passive reminders.
 

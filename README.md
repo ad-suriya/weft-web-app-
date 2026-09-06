@@ -58,9 +58,9 @@ Android app ships from its own repo.
 - **Extension**: Chrome Extension Manifest V3, React 19 + TypeScript + Vite, Turbo
   monorepo, Tailwind CSS, pnpm
 - **Dashboard frontend**: React 19 + TypeScript + Vite + Tailwind CSS
-- **Dashboard backend**: Python FastAPI ("WEFT Engine"), Gemini (via Vertex AI)
-  for the workflow / scheduling engine, Firestore for storage (falls back to an
-  in-memory mock)
+- **Dashboard backend**: Python FastAPI (internally "Task Weave Engine"), Gemini
+  (via Vertex AI) for the workflow / scheduling engine, Firestore for storage
+  (falls back to an in-memory mock)
 - **Auth**: Google OAuth sign-in, plus one-click HMAC-signed guest sessions
 
 ## Project Structure
@@ -77,7 +77,7 @@ Android app ships from its own repo.
 │   ├── types/ storage/ messaging/ ui/ i18n/ shared/ …
 ├── dashboard/
 │   ├── frontend/           # React dashboard UI
-│   └── backend/            # FastAPI backend ("WEFT Engine")
+│   └── backend/            # FastAPI backend (internally "Task Weave Engine")
 ├── scripts/                # Build / env helper scripts
 └── docs/                   # JUDGES.html, privacy notes
 ```
@@ -116,7 +116,7 @@ cp dashboard/backend/.env.example dashboard/backend/.env
 
 cd dashboard/backend
 pip install -r requirements.txt
-python main.py        # serves on http://localhost:8000
+uvicorn main:app --reload --port 8000   # http://localhost:8000
 ```
 
 Without Firestore credentials the backend automatically uses an in-memory mock
@@ -183,8 +183,8 @@ Web application OAuth client with the
 **Midnight Syntax** — Suriya A D · Pratyush R · Shravanth
 
 - Demo video: https://youtu.be/U-YKDOsGbo0
-- Demo web app: WEFT dashboard
-- Android APK: separate release
+- Demo web app: https://task-weave-57923630274.asia-south1.run.app
+- Android APK: shipped from the Android repo's releases
 
 ## Acknowledgments
 

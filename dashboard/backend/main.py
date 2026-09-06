@@ -1,4 +1,4 @@
-"""WEFT — FastAPI app.
+"""Task Weave — FastAPI app.
 
 Tier 1: task CRUD, AI prioritization (via the Gemini engine), AI scheduling,
 autonomous rescheduling, and calendar (.ics) export.
@@ -48,7 +48,7 @@ import scheduler
 import search as search_mod
 import study
 
-app = FastAPI(title="WEFT Engine")
+app = FastAPI(title="Task Weave Engine")
 
 # FRONTEND_ORIGIN is also used by auth.py's OAuth redirect; in production
 # this is the deployed frontend's Cloud Run URL, set via env var at deploy
