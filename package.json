@@ -7,7 +7,7 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/ad-suriya/Vibe2Ship.git"
+    "url": "https://github.com/ad-suriya/weft-web-app-.git"
   },
   "type": "module",
   "scripts": {

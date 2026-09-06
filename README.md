@@ -93,8 +93,8 @@ Android app ships from its own repo.
 ### Browser extension
 
 ```bash
-git clone https://github.com/ad-suriya/Vibe2Ship.git
-cd Vibe2Ship
+git clone https://github.com/ad-suriya/weft-web-app-.git
+cd weft-web-app-
 pnpm install          # also creates the root .env (build flags, no secrets)
 pnpm build            # production build → dist/
 ```
