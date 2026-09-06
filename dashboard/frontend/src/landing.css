@@ -483,3 +483,57 @@ html:has(.weft-landing) { scroll-behavior: smooth; }
   0%, 100% { opacity: 0.85; }
   50% { opacity: 0.55; }
 }
+
+/* ---------- guest / judge access pill (rendered as a sibling of .weft-landing,
+ * so it carries its own colours rather than the scoped landing vars) --------- */
+.weft-guest-cta {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font: 500 13px/1.4 "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.weft-guest-cta__label {
+  font: 700 10px/1 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #6B655C;
+  background: rgba(245, 242, 237, 0.9);
+  padding: 3px 6px;
+}
+.weft-guest-cta__btn {
+  cursor: pointer;
+  border: 2px solid #1A1A1A;
+  background: #D14D2A;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 11px 18px;
+  box-shadow: 5px 5px 0 0 #1A1A1A;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+.weft-guest-cta__btn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 0 #1A1A1A;
+}
+.weft-guest-cta__btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 3px 3px 0 0 #1A1A1A;
+}
+.weft-guest-cta__btn:disabled { opacity: 0.75; cursor: default; }
+.weft-guest-cta__err {
+  max-width: 220px;
+  text-align: right;
+  color: #D14D2A;
+  font-size: 12px;
+  background: rgba(245, 242, 237, 0.95);
+  padding: 4px 6px;
+}
+@media (max-width: 640px) {
+  .weft-guest-cta { right: 10px; bottom: 10px; }
+  .weft-guest-cta__btn { padding: 10px 14px; font-size: 12px; }
+}

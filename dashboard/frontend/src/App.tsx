@@ -101,6 +101,15 @@ export default function App() {
   const reducedMotion = useReducedMotion();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState<any>(null);
+  // Guest sessions (LandingPage "Try it instantly") stamp is_guest on the
+  // stored auth blob — used only to show the "Guest" chip in the header.
+  const isGuest = useMemo(() => {
+    try {
+      return !!JSON.parse(localStorage.getItem('auth') || 'null')?.is_guest;
+    } catch {
+      return false;
+    }
+  }, [isAuthenticated]);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
   // First-use data-use notice. undefined = not checked yet, null = checked and
@@ -1061,6 +1070,14 @@ export default function App() {
               <SearchBar onSelectTask={selectSearchTask} onSelectGoal={selectSearchGoal} onSelectHabit={selectSearchHabit} />
             </div>
             <RemindersBell holdNotifications={focusPrefs.study_focus && focusPrefs.hold_notifications && pomoRunning} />
+            {isGuest && (
+              <span
+                title="You're exploring as a guest — this workspace is temporary and isn't shared. Sign in with Google (Settings) to keep your work."
+                className="px-2 py-1 rounded-full border border-accent text-accent font-sans text-[10px] font-bold uppercase tracking-wider"
+              >
+                Guest
+              </span>
+            )}
             <button
               onClick={() => setTab('settings')}
               title="Settings"

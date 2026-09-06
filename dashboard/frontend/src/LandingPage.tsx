@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import './landing.css';
 import { LANDING_HTML } from './landingMarkup';
+import { api } from './api';
 
 interface LandingPageProps {
   // Set when a sign-in attempt bounced back with an error — App.tsx renders
@@ -33,6 +34,7 @@ const DEFAULT_AUTH_ERROR_MESSAGE = 'Your sign-in session could not be verified. 
 export default function LandingPage({ authError }: LandingPageProps = {}) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [guestState, setGuestState] = useState<'idle' | 'loading' | 'error'>('idle');
   const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // A fresh authError (new sign-in attempt) should reset any earlier dismissal.
@@ -40,6 +42,32 @@ export default function LandingPage({ authError }: LandingPageProps = {}) {
 
   const retry = () => {
     window.location.href = '/api/auth/google/login';
+  };
+
+  // One-click guest access for judges / anyone who just wants to look around:
+  // mint a guest session, drop it into localStorage in the exact shape the
+  // Google flow produces, then hard-navigate to the dashboard so App boots
+  // fresh and picks it up.
+  const continueAsGuest = async () => {
+    if (guestState === 'loading') return;
+    setGuestState('loading');
+    try {
+      const { token, user } = await api.guestLogin();
+      const authData = {
+        isAuthenticated: true,
+        user: { id: user.id, email: user.email, name: user.name, picture: user.picture },
+        accessToken: token,
+        refreshToken: token,
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        is_guest: true,
+      };
+      localStorage.setItem('auth', JSON.stringify(authData));
+      window.dispatchEvent(new CustomEvent('dashboardAuthChanged', { detail: authData }));
+      window.location.assign('/');
+    } catch (err) {
+      console.error('[guest] login failed:', err);
+      setGuestState('error');
+    }
   };
 
   useEffect(() => {
@@ -165,6 +193,23 @@ export default function LandingPage({ authError }: LandingPageProps = {}) {
   return (
     <>
       <div className="weft-scroll-progress" aria-hidden="true" />
+
+      <div className="weft-guest-cta" role="region" aria-label="Guest access">
+        <span className="weft-guest-cta__label">Judging?</span>
+        <button
+          type="button"
+          className="weft-guest-cta__btn"
+          onClick={continueAsGuest}
+          disabled={guestState === 'loading'}
+        >
+          {guestState === 'loading' ? 'Setting up…' : 'Try it instantly — no sign-up'}
+        </button>
+        {guestState === 'error' && (
+          <span className="weft-guest-cta__err" role="alert">
+            Couldn’t start a guest session. Please retry.
+          </span>
+        )}
+      </div>
       <AnimatePresence>
         {authError && !dismissed && (
           <motion.div

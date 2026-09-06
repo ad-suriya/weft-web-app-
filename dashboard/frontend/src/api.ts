@@ -70,6 +70,13 @@ export interface NewTask {
 }
 
 export const api = {
+  // One-click guest access — no Google account, dashboard only. Returns an
+  // HMAC-signed guest token (used exactly like a Google credential in the
+  // Authorization header) plus a fresh, pre-seeded demo workspace.
+  guestLogin: () =>
+    fetch('/api/auth/guest', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      .then(handle<{ token: string; user: { id: string; email: string; name: string; picture: string | null; is_guest: boolean } }>),
+
   listTasks: () => fetch('/api/tasks', { headers: authHeaders() }).then(handle<Task[]>),
 
   chat: (message: string, history: { role: string; text: string }[]) =>

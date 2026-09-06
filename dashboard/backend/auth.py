@@ -12,9 +12,16 @@ dependency. The same redirect requests the Calendar scope so login and
 Calendar access are granted together.
 """
 
+import base64
+import hashlib
+import hmac
+import json
 import os
+import time
 import urllib.parse
+import uuid
 from pathlib import Path
+from typing import Optional
 
 import cachecontrol
 import requests
@@ -86,11 +93,83 @@ def verify_google_id_token(token: str) -> dict:
     )
 
 
+# --- Guest sessions ----------------------------------------------------------
+# A "Continue as Guest" path so a non-technical judge can use the dashboard
+# with zero setup (no Google account, no extension). We can't verify a Google
+# ID token for these, so a guest instead carries a short-lived HMAC-signed
+# token minted here. It's a deliberately minimal JWT-shaped blob — no external
+# library — distinguishable from a Google JWT by its prefix so get_current_user
+# can cheaply route it to the right verifier. Each guest gets its own isolated
+# user id (guest_<random>), so guest workspaces never collide with each other
+# or with real accounts.
+GUEST_TOKEN_SECRET = os.environ.get("GUEST_TOKEN_SECRET", "weft-guest-dev-secret-change-in-prod")
+GUEST_TOKEN_TTL_SECONDS = 7 * 24 * 3600
+GUEST_TOKEN_PREFIX = "weftguest."
+
+
+def _b64u_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _b64u_decode(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def _guest_sig(body: str) -> str:
+    return _b64u_encode(hmac.new(GUEST_TOKEN_SECRET.encode(), body.encode(), hashlib.sha256).digest())
+
+
+def new_guest_id() -> str:
+    return f"guest_{uuid.uuid4().hex[:16]}"
+
+
+def mint_guest_token(sub: str, email: str, name: str) -> str:
+    payload = {
+        "sub": sub,
+        "email": email,
+        "name": name,
+        "guest": True,
+        "exp": int(time.time()) + GUEST_TOKEN_TTL_SECONDS,
+    }
+    body = _b64u_encode(json.dumps(payload, separators=(",", ":")).encode())
+    return f"{GUEST_TOKEN_PREFIX}{body}.{_guest_sig(body)}"
+
+
+def verify_guest_token(token: str) -> Optional[dict]:
+    """Return the guest's user dict if `token` is a valid, unexpired guest
+    token; None if it isn't a guest token at all or fails verification."""
+    if not token.startswith(GUEST_TOKEN_PREFIX):
+        return None
+    try:
+        body, sig = token[len(GUEST_TOKEN_PREFIX):].split(".", 1)
+        if not hmac.compare_digest(sig, _guest_sig(body)):
+            return None
+        payload = json.loads(_b64u_decode(body))
+        if not payload.get("guest") or float(payload.get("exp", 0)) < time.time():
+            return None
+        return {
+            "id": payload["sub"],
+            "email": payload.get("email", ""),
+            "name": payload.get("name", "Guest"),
+            "picture": None,
+            "is_guest": True,
+        }
+    except Exception:  # noqa: BLE001 — any malformed token is just "not valid"
+        return None
+
+
 def get_current_user(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
 
     token = authorization.removeprefix("Bearer ").strip()
+
+    # Cheap local check first — a guest token can never pass Google verification,
+    # and a Google JWT lacks the guest prefix so this is a no-op for real users.
+    guest = verify_guest_token(token)
+    if guest is not None:
+        return guest
+
     try:
         claims = verify_google_id_token(token)
     except ValueError as exc:

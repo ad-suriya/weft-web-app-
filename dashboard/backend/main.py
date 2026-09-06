@@ -552,6 +552,120 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
     return resp
 
 
+# --- Guest sessions (one-click, no Google) ----------------------------------
+# Lets a non-technical judge open the dashboard and use everything immediately.
+# Each call creates a fresh, isolated guest workspace pre-seeded with a sample
+# study plan so the product looks alive on the first screen. Dashboard-only —
+# the extension still uses the Google sign-in path.
+@app.post("/api/auth/guest")
+def create_guest_session() -> dict:
+    guest_id = auth.new_guest_id()
+    name = "Guest"
+    email = f"{guest_id}@guest.weft.app"
+    db.upsert_user(guest_id, email=email, name=name, picture=None)
+    # Pre-accept the data-use notice: a judge shouldn't hit a consent modal
+    # before seeing the product, and a guest creates nothing that outlives the
+    # demo anyway.
+    try:
+        db.set_user_consent(guest_id, CONSENT_VERSION)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[guest] consent preset failed for {guest_id}: {exc!r}")
+    try:
+        _seed_guest_workspace(guest_id)
+    except Exception as exc:  # noqa: BLE001 — seed is best-effort; login must still succeed
+        print(f"[guest] workspace seed failed for {guest_id}: {exc!r}")
+    token = auth.mint_guest_token(guest_id, email, name)
+    return {
+        "token": token,
+        "user": {"id": guest_id, "email": email, "name": name, "picture": None, "is_guest": True},
+    }
+
+
+def _seed_guest_workspace(user_id: str) -> None:
+    """Populate a new guest account with the FLA-exam sample from the product
+    plan: a goal, a study workflow with Learn/Practice/Revise stages, tasks in
+    mixed states (done / in-progress / to-do), and one finished session — so
+    the dashboard's Current Work / Next Action / Last Session all have real
+    content to show."""
+    # Deadlines/exam_date must be NAIVE local, like every other deadline in the
+    # app (study.assign_initial_deadlines, scheduler._parse) — a tz-aware
+    # string here makes scheduler.analyze raise on `deadline < now`.
+    day0 = datetime.now().replace(hour=20, minute=0, second=0, microsecond=0)
+
+    def deadline_in(days: int) -> str:
+        return (day0 + timedelta(days=days)).isoformat()
+
+    goal = db.create_goal(
+        user_id,
+        title="Ace the Formal Languages & Automata exam",
+        description="Work through the FLA syllabus stage by stage before the exam.",
+        metric="steps",
+        target_value=6,
+        deadline=deadline_in(7),
+    )
+
+    workflow = db.create_study_workflow(
+        user_id,
+        name="Formal Languages & Automata Study Plan",
+        subject="Formal Languages and Automata (FLA)",
+        canonical_subject="formal languages and automata",
+        goal_summary="Prepare for the FLA exam.",
+    )
+
+    stages = [
+        {"id": uuid.uuid4().hex, "name": "Learn", "order": 0},
+        {"id": uuid.uuid4().hex, "name": "Practice", "order": 1},
+        {"id": uuid.uuid4().hex, "name": "Revise", "order": 2},
+    ]
+    learn_id, practice_id, revise_id = (s["id"] for s in stages)
+
+    db.update_workflow(
+        workflow["id"], user_id,
+        stages=stages, status="ACTIVE", goal_id=goal["id"],
+        exam_date=deadline_in(7),
+        hours_per_day=3,
+        plan_summary="7 days out. Finish learning the core transforms, then drill "
+        "past papers, then one full revision pass.",
+        syllabus_topics=["CFG", "Regular Expressions", "CNF Conversion", "Pumping Lemma", "PDA"],
+    )
+
+    subj = "formal languages and automata"
+    # (title, next_micro_step, status, stage_id, topic, days_until_deadline, done_minutes, est_minutes)
+    seeds = [
+        ("Context-Free Grammars", "Re-derive the grammar for balanced parentheses", "COMPLETED", learn_id, "CFG", 1, 60, 60),
+        ("Regular Expressions & Finite Automata", "Convert 3 regexes to NFAs from memory", "COMPLETED", learn_id, "Regular Expressions", 1, 75, 75),
+        ("CNF Conversion", "Complete conversion example 2 (eliminate unit productions)", "IN_PROGRESS", learn_id, "CNF Conversion", 2, 20, 50),
+        ("Solve previous-year questions", "Work the 2023 paper, Section B", "TODO", practice_id, "PYQs", 4, 0, 90),
+        ("Pumping lemma proofs", "Prove L = {a^n b^n c^n} is not context-free", "TODO", practice_id, "Pumping Lemma", 5, 0, 45),
+        ("Full syllabus revision", "One pass over every stage's summary notes", "TODO", revise_id, "Revision", 6, 0, 60),
+    ]
+    created: list[dict] = []
+    for title, step, st, stage_id, topic, days, done_min, est_min in seeds:
+        created.append(db.create_task(
+            user_id, task_name=title, next_micro_step=step, status=st,
+            urgency="HIGH" if days <= 2 else "MEDIUM",
+            estimated_minutes=est_min, completed_minutes=done_min,
+            deadline=deadline_in(days),
+            goal_id=goal["id"], workflow_id=workflow["id"], step_id=stage_id,
+            subject=subj, topic=topic, tags=["study"],
+        ))
+
+    # A finished session on the in-progress task, so "Last Session" / resume
+    # has something to point at. Timestamps stay tz-aware UTC (db.now_iso
+    # convention); create_session stamps start_time = now, so end_time goes a
+    # full 25 min later to keep it strictly after start.
+    cnf_task = created[2]
+    session = db.create_session(
+        user_id, description="CNF Conversion",
+        duration_minutes=25, task_id=cnf_task["id"], current_step_id=learn_id,
+    )
+    db.update_session(
+        session["id"], user_id,
+        end_time=(datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=25)).isoformat(),
+        duration_minutes=25,
+    )
+
+
 # --- Study Planner (Goal -> Workflow -> Tasks) --------------------------------
 def _with_progress(workflow: dict, tasks: list[dict], now: Optional[datetime] = None) -> dict:
     """Attach live progress (study.py) to a STUDY_PLAN workflow — never cached,
